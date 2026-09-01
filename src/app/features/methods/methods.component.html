@@ -1,0 +1,299 @@
+<div class="methods-page">
+  <!-- Header -->
+  <div class="page-header">
+    <h1 class="page-title">Binding Site Prediction Methods</h1>
+    <p class="page-subtitle">Explore and compare different computational approaches for protein binding site prediction</p>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters-section">
+    <div class="search-box">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/>
+        <path d="m21 21-4.35-4.35"/>
+      </svg>
+      <input
+        type="text"
+        placeholder="Search methods..."
+        [value]="searchQuery()"
+        (input)="searchQuery.set($any($event.target).value)"
+        class="search-input"
+      />
+    </div>
+
+    <div class="category-filters">
+      @for (cat of categories; track cat.value) {
+        <button
+          class="category-btn"
+          [class.active]="selectedCategory() === cat.value"
+          (click)="selectedCategory.set($any(cat.value))"
+        >
+          {{ cat.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- Methods Grid -->
+  <div class="methods-grid">
+    @for (method of filteredMethods(); track method.id) {
+      <div class="method-card" (click)="openMethodDetail(method)">
+        <div class="card-header">
+          <div class="method-icon" [style.background-color]="method.color + '20'" [style.color]="method.color">
+            @switch (method.icon) {
+              @case ('transformer') {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <path d="M9 9h6v6H9z"/>
+                  <path d="M9 3v6M15 3v6M9 15v6M15 15v6M3 9h6M15 9h6M3 15h6M15 15h6"/>
+                </svg>
+              }
+              @case ('geometry') {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+                  <line x1="12" y1="22" x2="12" y2="15.5"/>
+                  <polyline points="22 8.5 12 15.5 2 8.5"/>
+                </svg>
+              }
+              @case ('neural') {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/>
+                  <circle cx="4" cy="6" r="2"/>
+                  <circle cx="20" cy="6" r="2"/>
+                  <circle cx="4" cy="18" r="2"/>
+                  <circle cx="20" cy="18" r="2"/>
+                  <path d="M6 7l4 3M14 17l4-3M6 17l4-3M14 7l4 3"/>
+                </svg>
+              }
+              @case ('ml') {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                  <path d="M2 17l10 5 10-5"/>
+                  <path d="M2 12l10 5 10-5"/>
+                </svg>
+              }
+            }
+          </div>
+          <div class="method-info">
+            <h3 class="method-name">{{ method.name }}</h3>
+            <span class="method-category">{{ method.categoryLabel }}</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="task-badge">
+            <span class="task-label">Task:</span>
+            <span class="task-value">{{ method.taskLabel }}</span>
+          </div>
+
+          <p class="method-description">{{ method.description }}</p>
+        </div>
+
+        <div class="card-metrics">
+          <h4 class="metrics-title">Benchmark Results</h4>
+          <div class="metrics-grid">
+            <div class="metric-item">
+              <span class="metric-label">F1</span>
+              <span class="metric-value">{{ formatMetric(method.metrics.testset300.f1) }}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">MCC</span>
+              <span class="metric-value">{{ formatMetric(method.metrics.testset300.mcc) }}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Precision</span>
+              <span class="metric-value">{{ formatMetric(method.metrics.testset300.precision) }}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Recall</span>
+              <span class="metric-value">{{ formatMetric(method.metrics.testset300.recall) }}</span>
+            </div>
+          </div>
+          <span class="dataset-note">TestSet300</span>
+        </div>
+
+        <div class="card-footer">
+          <button class="view-details-btn">
+            View Details
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    }
+  </div>
+</div>
+
+<!-- Method Detail Modal -->
+@if (selectedMethod(); as method) {
+  <div class="modal-overlay" (click)="closeMethodDetail()">
+    <div class="modal-container" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title-section">
+          <div class="method-icon large" [style.background-color]="method.color + '20'" [style.color]="method.color">
+            @switch (method.icon) {
+              @case ('transformer') {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <path d="M9 9h6v6H9z"/>
+                  <path d="M9 3v6M15 3v6M9 15v6M15 15v6M3 9h6M15 9h6M3 15h6M15 15h6"/>
+                </svg>
+              }
+              @case ('geometry') {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+                  <line x1="12" y1="22" x2="12" y2="15.5"/>
+                  <polyline points="22 8.5 12 15.5 2 8.5"/>
+                </svg>
+              }
+              @case ('neural') {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/>
+                  <circle cx="4" cy="6" r="2"/>
+                  <circle cx="20" cy="6" r="2"/>
+                  <circle cx="4" cy="18" r="2"/>
+                  <circle cx="20" cy="18" r="2"/>
+                  <path d="M6 7l4 3M14 17l4-3M6 17l4-3M14 7l4 3"/>
+                </svg>
+              }
+              @case ('ml') {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                  <path d="M2 17l10 5 10-5"/>
+                  <path d="M2 12l10 5 10-5"/>
+                </svg>
+              }
+            }
+          </div>
+          <div>
+            <h2 class="modal-title">{{ method.name }}</h2>
+            <div class="modal-meta">
+              <span class="meta-item">{{ method.categoryLabel }}</span>
+              <span class="meta-separator">•</span>
+              <span class="meta-item">{{ method.taskLabel }}</span>
+            </div>
+          </div>
+        </div>
+        <button class="close-btn" (click)="closeMethodDetail()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Overview -->
+        <section class="detail-section">
+          <h3 class="section-title">Overview</h3>
+          <p class="section-text">{{ method.overview }}</p>
+        </section>
+
+        <!-- Architecture -->
+        <section class="detail-section">
+          <h3 class="section-title">Architecture</h3>
+          <div class="architecture-block">
+            <pre class="architecture-text">{{ method.architecture }}</pre>
+          </div>
+        </section>
+
+        <!-- Input/Output -->
+        <section class="detail-section io-section">
+          <div class="io-column">
+            <h3 class="section-title">Input</h3>
+            <div class="io-card">
+              <h4 class="io-title">{{ method.input.title }}</h4>
+              <p class="io-description">{{ method.input.description }}</p>
+              <div class="format-tags">
+                @for (format of method.input.formats; track format) {
+                  <span class="format-tag">{{ format }}</span>
+                }
+              </div>
+            </div>
+          </div>
+          <div class="io-arrow">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </div>
+          <div class="io-column">
+            <h3 class="section-title">Output</h3>
+            <div class="io-card">
+              <h4 class="io-title">{{ method.output.title }}</h4>
+              <p class="io-description">{{ method.output.description }}</p>
+              <div class="format-tags">
+                <span class="format-tag">{{ method.output.format }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Benchmark Results -->
+        <section class="detail-section">
+          <h3 class="section-title">Benchmark Results</h3>
+          <div class="benchmark-grid">
+            <div class="benchmark-card">
+              <h4 class="benchmark-title">TestSet300</h4>
+              <div class="benchmark-metrics">
+                <div class="bm-item">
+                  <span class="bm-label">F1</span>
+                  <span class="bm-value">{{ formatMetric(method.metrics.testset300.f1) }}</span>
+                </div>
+                <div class="bm-item">
+                  <span class="bm-label">MCC</span>
+                  <span class="bm-value">{{ formatMetric(method.metrics.testset300.mcc) }}</span>
+                </div>
+                <div class="bm-item">
+                  <span class="bm-label">Precision</span>
+                  <span class="bm-value">{{ formatMetric(method.metrics.testset300.precision) }}</span>
+                </div>
+                <div class="bm-item">
+                  <span class="bm-label">Recall</span>
+                  <span class="bm-value">{{ formatMetric(method.metrics.testset300.recall) }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="benchmark-card">
+              <h4 class="benchmark-title">TestSet46</h4>
+              <div class="benchmark-metrics">
+                <div class="bm-item">
+                  <span class="bm-label">F1</span>
+                  <span class="bm-value">{{ formatMetric(method.metrics.testset46.f1) }}</span>
+                </div>
+                <div class="bm-item">
+                  <span class="bm-label">MCC</span>
+                  <span class="bm-value">{{ formatMetric(method.metrics.testset46.mcc) }}</span>
+                </div>
+                <div class="bm-item">
+                  <span class="bm-label">Precision</span>
+                  <span class="bm-value">{{ formatMetric(method.metrics.testset46.precision) }}</span>
+                </div>
+                <div class="bm-item">
+                  <span class="bm-label">Recall</span>
+                  <span class="bm-value">{{ formatMetric(method.metrics.testset46.recall) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- References -->
+        <section class="detail-section">
+          <h3 class="section-title">References</h3>
+          <div class="references-list">
+            @for (ref of method.references; track ref.title) {
+              <a [href]="ref.url" class="reference-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+                {{ ref.title }}
+              </a>
+            }
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+}

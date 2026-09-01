@@ -1,0 +1,106 @@
+<div class="protein-list-page">
+  <div class="page-header">
+    <div class="header-content">
+      <h1 class="page-title">Protein Structures</h1>
+      <p class="page-subtitle">
+        {{ selectedDataset() }} — {{ filteredProteins().length }} proteins
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <div class="search-box">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input 
+          type="text" 
+          class="search-input" 
+          placeholder="Search by name, PDB ID, or organism..."
+          [value]="searchQuery()"
+          (input)="onSearch($event)"
+        />
+      </div>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="loading-grid">
+      @for (item of [1,2,3,4,5,6]; track item) {
+        <div class="skeleton-card"></div>
+      }
+    </div>
+  } @else {
+    <div class="protein-grid">
+      @for (protein of filteredProteins(); track protein.id) {
+        <a [routerLink]="['/proteins', protein.id]" class="protein-card">
+          <div class="card-header">
+            <div class="protein-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <div class="card-badges">
+              <span class="badge badge-primary">{{ protein.pdbId }}</span>
+              @if (protein.resolution) {
+                <span class="badge resolution-badge" [class]="'badge-' + getResolutionClass(protein.resolution)">
+                  {{ protein.resolution.toFixed(2) }} Å
+                </span>
+              }
+            </div>
+          </div>
+
+          <div class="card-body">
+            <h3 class="protein-name">{{ protein.name }}</h3>
+            
+            <div class="protein-meta">
+              <div class="meta-item">
+                <span class="meta-label">Length</span>
+                <span class="meta-value font-mono">{{ protein.length }}</span>
+              </div>
+              
+              @if (protein.experimentalMethod) {
+                <div class="meta-item">
+                  <span class="meta-label">Method</span>
+                  <span class="meta-value">{{ protein.experimentalMethod }}</span>
+                </div>
+              }
+            </div>
+
+            @if (protein.organism) {
+              <div class="organism-info">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+                <span>{{ protein.organism }}</span>
+              </div>
+            }
+          </div>
+
+          <div class="card-footer">
+            <span class="view-link">
+              View Details
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m9 18 6-6-6-6"/>
+              </svg>
+            </span>
+          </div>
+        </a>
+      }
+    </div>
+
+    @if (filteredProteins().length === 0) {
+      <div class="empty-state">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.35-4.35"/>
+        </svg>
+        <h3>No proteins found</h3>
+        <p>Try adjusting your search query</p>
+      </div>
+    }
+  }
+</div>

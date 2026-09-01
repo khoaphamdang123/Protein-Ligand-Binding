@@ -1,0 +1,215 @@
+<div class="landing-page">
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="hero-container">
+      <div class="hero-content">
+        <h1 class="hero-title">
+          Explore Protein Binding Sites<br>
+          with <span class="highlight">ESM-ORION</span>
+        </h1>
+        <p class="hero-subtitle">
+          Interactive visualization and benchmark analysis of binding-site 
+          prediction methods on TestSet300 and TestSet46.
+        </p>
+        <div class="hero-actions">
+          <a routerLink="/explore" class="btn btn-primary btn-lg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+            </svg>
+            <span>Explore Dataset</span>
+          </a>
+          <a routerLink="/compare" class="btn btn-secondary btn-lg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            <span>Compare Methods</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Scientific Visualization -->
+      <div class="hero-visual">
+        <div class="protein-structure">
+          <!-- Molecular nodes -->
+          <div class="node node-1" [style.animation-delay]="'0s'"></div>
+          <div class="node node-2" [style.animation-delay]="'0.3s'"></div>
+          <div class="node node-3" [style.animation-delay]="'0.6s'"></div>
+          <div class="node node-4" [style.animation-delay]="'0.9s'"></div>
+          <div class="node node-5" [style.animation-delay]="'1.2s'"></div>
+          <div class="node node-6" [style.animation-delay]="'1.5s'"></div>
+          <div class="node node-7" [style.animation-delay]="'1.8s'"></div>
+          
+          <!-- Connections -->
+          <svg class="connections" viewBox="0 0 400 400">
+            <g class="connection-group">
+              <line x1="200" y1="120" x2="200" y2="200" class="connection" />
+              <line x1="200" y1="200" x2="140" y2="250" class="connection" />
+              <line x1="200" y1="200" x2="260" y2="250" class="connection" />
+              <line x1="140" y1="250" x2="180" y2="310" class="connection" />
+              <line x1="260" y1="250" x2="220" y2="310" class="connection" />
+              <line x1="200" y1="200" x2="120" y2="180" class="connection" />
+              <line x1="200" y1="200" x2="280" y2="180" class="connection" />
+            </g>
+          </svg>
+
+          <!-- Particles -->
+          @for (particle of particles; track particle.id) {
+            <div 
+              class="particle" 
+              [style.left.%]="particle.x"
+              [style.top.%]="particle.y"
+              [style.animation-delay]="particle.delay + 's'"
+              [style.animation-duration]="particle.duration + 's'"
+            ></div>
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Research Overview -->
+  <section class="research-section">
+    <div class="research-container">
+      <div class="research-grid">
+        <div class="research-card">
+          <div class="research-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </div>
+          <h3 class="research-title">Protein Visualization</h3>
+          <p class="research-description">
+            Inspect protein structures and binding residues with interactive 
+            3D visualization and sequence-level detail.
+          </p>
+        </div>
+
+        <div class="research-card">
+          <div class="research-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+          </div>
+          <h3 class="research-title">Prediction Analysis</h3>
+          <p class="research-description">
+            Explore residue-level prediction scores and errors across 
+            multiple prediction methods and benchmark datasets.
+          </p>
+        </div>
+
+        <div class="research-card">
+          <div class="research-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 20V10M12 20V4M6 20v-6"/>
+            </svg>
+          </div>
+          <h3 class="research-title">Benchmark Comparison</h3>
+          <p class="research-description">
+            Compare model performance on TestSet300 and TestSet46 with 
+            comprehensive metrics and statistical analysis.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Benchmark Preview -->
+  <section class="benchmark-section">
+    <div class="benchmark-container">
+      <h2 class="section-title">Benchmark Datasets</h2>
+      <p class="section-subtitle">
+        Comprehensive evaluation on two curated protein binding site datasets
+      </p>
+
+      <div class="benchmark-grid">
+        <!-- TestSet300 -->
+        <div class="benchmark-card">
+          <div class="benchmark-header">
+            <div class="benchmark-badge">Primary Dataset</div>
+            <h3 class="benchmark-name">TestSet300</h3>
+          </div>
+          <div class="benchmark-stats">
+            <div class="stat-item">
+              <div class="stat-label">Proteins</div>
+              <div class="stat-value">300</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Binding Residues</div>
+              <div class="stat-value">12,450</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Avg. Sequence Length</div>
+              <div class="stat-value">342</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Evaluated Methods</div>
+              <div class="stat-value">5</div>
+            </div>
+          </div>
+          <a routerLink="/benchmark/testset300" class="benchmark-link">
+            <span>View Details</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m9 18 6-6-6-6"/>
+            </svg>
+          </a>
+        </div>
+
+        <!-- TestSet46 -->
+        <div class="benchmark-card">
+          <div class="benchmark-header">
+            <div class="benchmark-badge benchmark-badge-secondary">Challenge Dataset</div>
+            <h3 class="benchmark-name">TestSet46</h3>
+          </div>
+          <div class="benchmark-stats">
+            <div class="stat-item">
+              <div class="stat-label">Proteins</div>
+              <div class="stat-value">46</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Binding Residues</div>
+              <div class="stat-value">1,876</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Avg. Sequence Length</div>
+              <div class="stat-value">385</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Evaluated Methods</div>
+              <div class="stat-value">5</div>
+            </div>
+          </div>
+          <a routerLink="/benchmark/testset46" class="benchmark-link">
+            <span>View Details</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m9 18 6-6-6-6"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="cta-section">
+    <div class="cta-container">
+      <h2 class="cta-title">Explore Binding Site Predictions</h2>
+      <p class="cta-description">
+        Start analyzing protein-ligand binding site predictions with 
+        interactive visualizations and comprehensive benchmark data
+      </p>
+      <a routerLink="/explore" class="btn btn-primary btn-xl">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+        </svg>
+        <span>Open Explorer</span>
+      </a>
+    </div>
+  </section>
+</div>

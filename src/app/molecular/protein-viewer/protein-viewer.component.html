@@ -1,0 +1,262 @@
+<div class="protein-viewer" [class.fullscreen]="isFullscreen">
+  <!-- Viewer Container - Always present for initialization -->
+  <div class="viewer-canvas">
+    <div #viewerContainer class="viewer-3d"></div>
+  </div>
+
+  <!-- Loading State Overlay -->
+  @if (isLoading()) {
+    <div class="viewer-loading">
+      <div class="loading-spinner"></div>
+      <p>Loading Protein Structure...</p>
+      <span class="loading-text">Preparing molecular visualization</span>
+    </div>
+  }
+
+  <!-- Error State Overlay -->
+  @if (error() && !isLoading()) {
+    <div class="viewer-error">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <h3>Unable to load structure</h3>
+      <p>{{ error() }}</p>
+      <button class="btn-retry" (click)="onRetry()">Retry</button>
+    </div>
+  }
+
+  <!-- Empty State Overlay -->
+  @if (!protein && !isLoading() && !error()) {
+    <div class="viewer-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+        <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+        <line x1="12" y1="22.08" x2="12" y2="12"/>
+      </svg>
+      <h3>Select a protein to visualize</h3>
+      <p>Search for a Protein ID, UniProt ID, or PDB ID</p>
+    </div>
+  }
+
+  <!-- Main Viewer UI - Only show when protein is loaded -->
+  @if (!isLoading() && !error() && protein) {
+    <!-- Controls Bar -->
+    <div class="viewer-controls" [class.hidden]="!showControls">
+      <!-- Camera Controls -->
+      <div class="control-group">
+        <button class="control-btn" title="Reset Camera" (click)="onResetCamera()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+            <path d="M21 3v5h-5"/>
+          </svg>
+        </button>
+        <button class="control-btn" title="Zoom In" (click)="onZoomIn()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <line x1="11" y1="8" x2="11" y2="14"/>
+            <line x1="8" y1="11" x2="14" y2="11"/>
+          </svg>
+        </button>
+        <button class="control-btn" title="Zoom Out" (click)="onZoomOut()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <line x1="8" y1="11" x2="14" y2="11"/>
+          </svg>
+        </button>
+        <button class="control-btn" title="Focus Binding Pocket" (click)="onFocusBindingPocket()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V5a3 3 0 0 0-3-3z"/>
+            <path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="control-divider"></div>
+
+      <!-- Representation Controls -->
+      <div class="control-group">
+        @for (repr of representations; track repr.value) {
+          <button 
+            class="control-btn" 
+            [class.active]="viewerState().representation === repr.value"
+            [title]="repr.label"
+            (click)="onSetRepresentation(repr.value)">
+            @if (repr.value === 'cartoon') {
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              </svg>
+            }
+            @if (repr.value === 'surface') {
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+              </svg>
+            }
+            @if (repr.value === 'ball-stick') {
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 1v6M12 17v6M5.64 5.64l4.24 4.24M14.12 14.12l4.24 4.24M1 12h6M17 12h6M5.64 18.36l4.24-4.24M14.12 9.88l4.24-4.24"/>
+              </svg>
+            }
+            @if (repr.value === 'backbone') {
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="2" y1="12" x2="22" y2="12"/>
+                <circle cx="7" cy="12" r="2"/>
+                <circle cx="17" cy="12" r="2"/>
+              </svg>
+            }
+          </button>
+        }
+      </div>
+
+      <div class="control-divider"></div>
+
+      <!-- Visibility Controls -->
+      <div class="control-group">
+        <button 
+          class="control-btn" 
+          [class.active]="viewerState().showBindingSite"
+          title="Binding Site" 
+          (click)="onToggleBindingSite()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" fill="currentColor" opacity="0.3"/>
+            <circle cx="12" cy="12" r="8"/>
+          </svg>
+        </button>
+        <button 
+          class="control-btn" 
+          [class.active]="viewerState().showPredictions"
+          title="Show Predictions" 
+          (click)="onTogglePredictions()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+        </button>
+        <button 
+          class="control-btn" 
+          [class.active]="viewerState().showLabels"
+          title="Residue Labels" 
+          (click)="onToggleLabels()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </button>
+        <!-- <button 
+          class="control-btn" 
+          [class.active]="viewerState().showLigands"
+          title="Ligands" 
+          (click)="onToggleLigands()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+            <polyline points="2 17 12 22 22 17"/>
+            <polyline points="2 12 12 17 22 12"/>
+          </svg>
+        </button> -->
+      </div>
+
+      <div class="control-divider"></div>
+
+      <!-- Additional Controls -->
+      <div class="control-group">
+        <button class="control-btn" title="Fullscreen" (click)="onToggleFullscreen()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            @if (!isFullscreen) {
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            } @else {
+              <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+            }
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Info Overlay -->
+    <div class="viewer-overlay">
+      @if (protein) {
+        <div class="info-badge">
+          <span class="info-badge-label">PDB:</span>
+          <span class="info-badge-value">{{ protein.pdbId }}</span>
+        </div>
+      }
+      <div class="info-badge">
+        <span class="info-badge-label">Representation:</span>
+        <span class="info-badge-value">{{ viewerState().representation }}</span>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="viewer-legend">
+      <div class="legend-title">Prediction Status</div>
+      <div class="legend-items">
+        <div class="legend-item">
+          <span class="legend-dot" style="background-color: #10B981"></span>
+          <span class="legend-label">True Positive (TP)</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot" style="background-color: #F97316"></span>
+          <span class="legend-label">False Positive (FP)</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot" style="background-color: #EF4444"></span>
+          <span class="legend-label">False Negative (FN)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Residue Info Panel -->
+    @if (showResidueInfo && selectedResidue) {
+      <div class="residue-info-panel">
+        <div class="panel-header">
+          <h3>Residue Information</h3>
+          <button class="btn-close" (click)="onCloseResidueInfo()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="panel-content">
+          <div class="info-row">
+            <span class="info-label">Residue</span>
+            <span class="info-value">{{ selectedResidue.aminoAcid }} {{ selectedResidue.position }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Chain</span>
+            <span class="info-value">{{ selectedResidue.chainId || 'A' }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Position</span>
+            <span class="info-value">{{ selectedResidue.position }}</span>
+          </div>
+          @if (selectedResidue.predictionScore !== undefined) {
+            <div class="info-row">
+              <span class="info-label">Confidence</span>
+              <span class="info-value">{{ formatConfidence(selectedResidue.predictionScore) }}</span>
+            </div>
+          }
+          @if (selectedResidue.isBinding !== undefined) {
+            <div class="info-row">
+              <span class="info-label">Prediction</span>
+              <span class="info-value" [class.binding]="selectedResidue.isBinding">
+                {{ selectedResidue.isBinding ? 'Binding' : 'Non-binding' }}
+              </span>
+            </div>
+          }
+          @if (selectedResidue.experimentalBinding !== undefined) {
+            <div class="info-row">
+              <span class="info-label">Ground Truth</span>
+              <span class="info-value" [class.binding]="selectedResidue.experimentalBinding">
+                {{ selectedResidue.experimentalBinding ? 'Binding' : 'Non-binding' }}
+              </span>
+            </div>
+          }
+        </div>
+      </div>
+    }
+  }
+</div>

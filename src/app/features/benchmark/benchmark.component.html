@@ -1,0 +1,128 @@
+<div class="benchmark-page">
+  <div class="page-header">
+    <h1 class="page-title">Benchmark Results</h1>
+    <p class="page-subtitle">
+      Performance comparison across {{ selectedDataset() }}
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton"></div>
+  } @else if (statistics()) {
+    <div class="content-grid">
+      <!-- Dataset Overview -->
+      <div class="stats-overview">
+        <div class="stat-card">
+          <div class="stat-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">Total Proteins</div>
+            <div class="stat-value">{{ statistics()!.totalProteins }}</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 7h16M4 12h16M4 17h16"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">Total Residues</div>
+            <div class="stat-value">{{ statistics()!.totalResidues.toLocaleString() }}</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon accent">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 1v6M12 17v6M5.64 5.64l4.24 4.24M14.12 14.12l4.24 4.24M1 12h6M17 12h6M5.64 18.36l4.24-4.24M14.12 9.88l4.24-4.24"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">Binding Residues</div>
+            <div class="stat-value">{{ statistics()!.totalBindingResidues.toLocaleString() }}</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">Binding Ratio</div>
+            <div class="stat-value">{{ (statistics()!.bindingRatio * 100).toFixed(2) }}%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Method Performance Chart -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <h2 class="chart-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 20V10M12 20V4M6 20v-6"/>
+            </svg>
+            Average Performance by Method
+          </h2>
+        </div>
+        <div class="chart-container">
+          <div echarts [options]="performanceChartOption()" class="chart"></div>
+        </div>
+      </div>
+
+      <!-- Method Rankings -->
+      <div class="rankings-card">
+        <div class="rankings-header">
+          <h2 class="rankings-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 16v-3a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v3M6 20h12M6 16h12M8 12h.01M16 12h.01M12 4v4"/>
+            </svg>
+            Method Rankings
+          </h2>
+        </div>
+
+        <div class="rankings-list">
+          @for (method of rankedMethods(); track method.method; let i = $index) {
+            <div class="rank-item">
+              <div class="rank-position">
+                <span class="rank-number" [class]="getRankClass(i)">{{ i + 1 }}</span>
+              </div>
+              <div class="rank-content">
+                <div class="rank-header">
+                  <h4 class="rank-method">{{ method.method }}</h4>
+                  <span class="rank-score">{{ method.avgF1.toFixed(1) }}%</span>
+                </div>
+                <div class="rank-metrics">
+                  <div class="rank-metric">
+                    <span class="metric-name">Precision</span>
+                    <div class="metric-bar-container">
+                      <div class="metric-bar" [style.width.%]="method.avgPrecision * 100"></div>
+                    </div>
+                    <span class="metric-percent">{{ (method.avgPrecision * 100).toFixed(1) }}%</span>
+                  </div>
+                  <div class="rank-metric">
+                    <span class="metric-name">Recall</span>
+                    <div class="metric-bar-container">
+                      <div class="metric-bar" [style.width.%]="method.avgRecall * 100"></div>
+                    </div>
+                    <span class="metric-percent">{{ (method.avgRecall * 100).toFixed(1) }}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>

@@ -1,0 +1,64 @@
+# See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+
+# Compiled output
+/dist
+/tmp
+/out-tsc
+/bazel-out
+
+# Node
+/node_modules
+npm-debug.log
+yarn-error.log
+
+# IDEs and editors
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/mcp.json
+.history/*
+
+# Miscellaneous
+/.angular/cache
+.sass-cache/
+/connect.lock
+/coverage
+/libpeerconnection.log
+testem.log
+/typings
+__screenshots__/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Documentation and Fix Reports (exclude from version control)
+# Keep only README.md, ARCHITECTURE.md, and PROJECT_SUMMARY.md
+*_FIX.md
+*_SUMMARY.md
+*_GUIDE.md
+*_REPORT.md
+*_CHECKLIST.md
+*_IMPLEMENTATION.md
+*_VERIFICATION.md
+*_TEST_GUIDE.md
+*_COMPLETE.md
+PHASE_*.md
+3D_VISUALIZATION_LOST_FIX.md
+PROTEIN_VIEWER_THEME_FIX.md
+FOCUS_BINDING_POCKET_FIX.md
+TOGGLE_*.md
+ZOOM_*.md
+REALTIME_*.md
+FULLSCREEN_*.md

@@ -1,0 +1,177 @@
+<nav class="navbar">
+  <div class="navbar-container">
+    <!-- Logo / Brand -->
+    <div class="navbar-brand">
+      <a routerLink="/" class="brand-link">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v6M12 17v6M5.64 5.64l4.24 4.24M14.12 14.12l4.24 4.24M1 12h6M17 12h6M5.64 18.36l4.24-4.24M14.12 9.88l4.24-4.24"/>
+          </svg>
+        </div>
+        <span class="brand-text">BindSite Explorer</span>
+      </a>
+    </div>
+
+    <!-- Desktop Navigation -->
+    <nav class="navbar-nav desktop-only">
+      <a routerLink="/explore" routerLinkActive="active" class="nav-link">Explore</a>
+      <a routerLink="/benchmark" routerLinkActive="active" class="nav-link">Benchmarks</a>
+      <a routerLink="/compare" routerLinkActive="active" class="nav-link">Compare</a>
+      <a routerLink="/methods" routerLinkActive="active" class="nav-link">Methods</a>
+      <!-- <a routerLink="/about" routerLinkActive="active" class="nav-link">About</a> -->
+    </nav>
+
+    <!-- Actions -->
+    <div class="navbar-actions">
+      <!-- Search Button -->
+      <button 
+        class="icon-btn" 
+        (click)="toggleSearch()"
+        [class.active]="searchOpen()"
+        aria-label="Search"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.35-4.35"/>
+        </svg>
+      </button>
+
+      <!-- Theme Toggle -->
+      <button 
+        class="icon-btn" 
+        (click)="toggleTheme()"
+        [attr.aria-label]="theme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+      >
+        @if (theme() === 'dark') {
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+          </svg>
+        } @else {
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        }
+      </button>
+
+      <!-- Settings Button (Desktop) -->
+      <button class="icon-btn desktop-only" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v6M12 17v6M5.64 5.64l4.24 4.24M14.12 14.12l4.24 4.24M1 12h6M17 12h6M5.64 18.36l4.24-4.24M14.12 9.88l4.24-4.24"/>
+        </svg>
+      </button>
+
+      <!-- Mobile Menu Toggle -->
+      <button 
+        class="icon-btn mobile-only" 
+        (click)="toggleMobileMenu()"
+        [class.active]="mobileMenuOpen()"
+        aria-label="Toggle menu"
+      >
+        @if (mobileMenuOpen()) {
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        } @else {
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12h18M3 6h18M3 18h18"/>
+          </svg>
+        }
+      </button>
+    </div>
+  </div>
+
+  <!-- Search Bar (Expandable) -->
+  @if (searchOpen()) {
+    <div class="search-bar animate-slide-down">
+      <div class="search-container">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input 
+          type="text" 
+          class="search-input" 
+          placeholder="Search proteins, PDB IDs, methods..."
+          autofocus
+        />
+        <button class="search-close" (click)="toggleSearch()" aria-label="Close search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  }
+
+  <!-- Mobile Menu -->
+  @if (mobileMenuOpen()) {
+    <div class="mobile-menu animate-slide-down">
+      <nav class="mobile-nav">
+        <a 
+          routerLink="/explore" 
+          routerLinkActive="active" 
+          class="mobile-nav-link"
+          (click)="closeMobileMenu()"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+          </svg>
+          <span>Explore</span>
+        </a>
+        <a 
+          routerLink="/benchmark" 
+          routerLinkActive="active" 
+          class="mobile-nav-link"
+          (click)="closeMobileMenu()"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 20V10M12 20V4M6 20v-6"/>
+          </svg>
+          <span>Benchmarks</span>
+        </a>
+        <a 
+          routerLink="/compare" 
+          routerLinkActive="active" 
+          class="mobile-nav-link"
+          (click)="closeMobileMenu()"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/>
+            <rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/>
+          </svg>
+          <span>Compare</span>
+        </a>
+        <a 
+          routerLink="/methods" 
+          routerLinkActive="active" 
+          class="mobile-nav-link"
+          (click)="closeMobileMenu()"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v6M12 17v6M5.64 5.64l4.24 4.24M14.12 14.12l4.24 4.24M1 12h6M17 12h6"/>
+          </svg>
+          <span>Methods</span>
+        </a>
+        <!-- <a 
+          routerLink="/about" 
+          routerLinkActive="active" 
+          class="mobile-nav-link"
+          (click)="closeMobileMenu()"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4M12 8h.01"/>
+          </svg>
+          <span>About</span>
+        </a> -->
+      </nav>
+    </div>
+  }
+</nav>

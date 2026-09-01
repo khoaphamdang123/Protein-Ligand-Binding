@@ -1,0 +1,248 @@
+<div class="comparison-page">
+  <!-- Header -->
+  <div class="page-header">
+    <h1 class="page-title">Method Comparison</h1>
+    <p class="page-subtitle">Compare binding-site prediction methods across different datasets</p>
+  </div>
+
+  <!-- Controls Section -->
+  <div class="controls-section">
+    <!-- Dataset Selector -->
+    <div class="control-group">
+      <label class="control-label">Dataset</label>
+      <div class="dataset-buttons">
+        <button
+          class="dataset-btn"
+          [class.active]="selectedDataset() === 'testset300'"
+          (click)="setDataset('testset300')"
+        >
+          <span class="dataset-name">TestSet300</span>
+          <span class="dataset-count">300 proteins</span>
+        </button>
+        <button
+          class="dataset-btn"
+          [class.active]="selectedDataset() === 'testset46'"
+          (click)="setDataset('testset46')"
+        >
+          <span class="dataset-name">TestSet46</span>
+          <span class="dataset-count">46 proteins</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Method Selector -->
+    <div class="control-group">
+      <label class="control-label">Methods (select multiple)</label>
+      <div class="method-buttons">
+        @for (method of allMethods; track method) {
+          <button
+            class="method-btn"
+            [class.active]="isMethodSelected(method)"
+            [style.--method-color]="getMethodColor(method)"
+            (click)="toggleMethod(method)"
+          >
+            <span class="method-indicator" [style.background-color]="getMethodColor(method)"></span>
+            {{ method }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- Metric Selector -->
+    <div class="control-group">
+      <label class="control-label">Metrics</label>
+      <div class="metric-toggles">
+        <button
+          class="metric-toggle"
+          [class.active]="selectedMetrics().has('f1')"
+          (click)="toggleMetric('f1')"
+        >
+          F1 Score
+        </button>
+        <button
+          class="metric-toggle"
+          [class.active]="selectedMetrics().has('mcc')"
+          (click)="toggleMetric('mcc')"
+        >
+          MCC
+        </button>
+        <button
+          class="metric-toggle"
+          [class.active]="selectedMetrics().has('precision')"
+          (click)="toggleMetric('precision')"
+        >
+          Precision
+        </button>
+        <button
+          class="metric-toggle"
+          [class.active]="selectedMetrics().has('recall')"
+          (click)="toggleMetric('recall')"
+        >
+          Recall
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Key Insights -->
+  <div class="insights-section">
+    <h2 class="section-title">Quick Insights</h2>
+    <div class="insights-grid">
+      <div class="insight-card">
+        <div class="insight-label">Highest F1</div>
+        <div class="insight-value">{{ keyInsights().highestF1 }}</div>
+      </div>
+      <div class="insight-card">
+        <div class="insight-label">Highest MCC</div>
+        <div class="insight-value">{{ keyInsights().highestMCC }}</div>
+      </div>
+      <div class="insight-card">
+        <div class="insight-label">Highest Precision</div>
+        <div class="insight-value">{{ keyInsights().highestPrecision }}</div>
+      </div>
+      <div class="insight-card">
+        <div class="insight-label">Highest Recall</div>
+        <div class="insight-value">{{ keyInsights().highestRecall }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comparison Table -->
+  <div class="table-section">
+    <h2 class="section-title">Performance Comparison</h2>
+    <div class="table-container">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th class="method-col">Method</th>
+            <th class="metric-col" [class.highlighted]="selectedMetrics().has('f1')">F1 Score</th>
+            <th class="metric-col" [class.highlighted]="selectedMetrics().has('mcc')">MCC</th>
+            <th class="metric-col" [class.highlighted]="selectedMetrics().has('precision')">Precision</th>
+            <th class="metric-col" [class.highlighted]="selectedMetrics().has('recall')">Recall</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of comparisonTable(); track row.method) {
+            <tr>
+              <td class="method-cell">
+                <span class="method-indicator" [style.background-color]="getMethodColor(row.method)"></span>
+                <span class="method-name">{{ row.method }}</span>
+                @if (row.method === bestMethods()['f1']?.method) {
+                  <span class="best-badge">Best F1</span>
+                }
+              </td>
+              <td class="metric-cell" [class.best]="row.method === bestMethods()['f1']?.method">
+                {{ formatMetric(row.f1, 'f1') }}
+              </td>
+              <td class="metric-cell" [class.best]="row.method === bestMethods()['mcc']?.method">
+                {{ formatMetric(row.mcc, 'mcc') }}
+              </td>
+              <td class="metric-cell" [class.best]="row.method === bestMethods()['precision']?.method">
+                {{ formatMetric(row.precision, 'precision') }}
+              </td>
+              <td class="metric-cell" [class.best]="row.method === bestMethods()['recall']?.method">
+                {{ formatMetric(row.recall, 'recall') }}
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Charts Section -->
+  <div class="charts-section">
+    <h2 class="section-title">Visualizations</h2>
+    
+    <div class="charts-grid">
+      <!-- F1 Bar Chart -->
+      <div class="chart-card">
+        <h3 class="chart-title">F1 Score Comparison</h3>
+        <div class="chart-container" #f1Chart></div>
+      </div>
+
+      <!-- MCC Bar Chart -->
+      <div class="chart-card">
+        <h3 class="chart-title">MCC Comparison</h3>
+        <div class="chart-container" #mccChart></div>
+      </div>
+
+      <!-- Precision vs Recall -->
+      <div class="chart-card wide">
+        <h3 class="chart-title">Precision vs Recall</h3>
+        <div class="chart-container" #prChart></div>
+      </div>
+
+      <!-- Radar Chart -->
+      <div class="chart-card">
+        <h3 class="chart-title">Multi-Metric Radar</h3>
+        <div class="chart-container" #radarChart></div>
+      </div>
+
+      <!-- Scatter Plot -->
+      <div class="chart-card">
+        <h3 class="chart-title">F1 vs MCC Distribution</h3>
+        <div class="chart-container" #scatterChart></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Questions Section -->
+  <div class="questions-section">
+    <h2 class="section-title">Answering Key Questions</h2>
+    <div class="questions-grid">
+      <div class="question-card">
+        <div class="question-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="question-content">
+          <h4>Which method has the highest F1?</h4>
+          <p>{{ keyInsights().highestF1 }}</p>
+        </div>
+      </div>
+
+      <div class="question-card">
+        <div class="question-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <div class="question-content">
+          <h4>Which method has the highest MCC?</h4>
+          <p>{{ keyInsights().highestMCC }}</p>
+        </div>
+      </div>
+
+      <div class="question-card">
+        <div class="question-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <path d="M22 4 12 14.01l-3-3"/>
+          </svg>
+        </div>
+        <div class="question-content">
+          <h4>Which method has better precision?</h4>
+          <p>{{ keyInsights().highestPrecision }}</p>
+        </div>
+      </div>
+
+      <div class="question-card">
+        <div class="question-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 3v18h18"/>
+            <path d="m19 9-5 5-4-4-3 3"/>
+          </svg>
+        </div>
+        <div class="question-content">
+          <h4>Which method has better recall?</h4>
+          <p>{{ keyInsights().highestRecall }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

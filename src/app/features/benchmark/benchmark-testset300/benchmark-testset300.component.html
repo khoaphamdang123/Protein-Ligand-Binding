@@ -1,0 +1,123 @@
+<div class="testset-page">
+  <!-- Header -->
+  <div class="page-header">
+    <div class="header-main">
+      <h1 class="page-title">TestSet300</h1>
+      <p class="page-subtitle">Comprehensive benchmark dataset with 300 protein structures</p>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-label">Total Proteins</div>
+        <div class="stat-value">{{ stats().total }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Length</div>
+        <div class="stat-value">{{ stats().avgLength }} aa</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Binding Residues</div>
+        <div class="stat-value">{{ stats().totalBindingResidues.toFixed(0) }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg F1 Score</div>
+        <div class="stat-value">{{ (stats().avgF1 * 100).toFixed(1) }}%</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters & Search -->
+  <div class="filters-section">
+    <div class="search-box">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/>
+        <path d="m21 21-4.35-4.35"/>
+      </svg>
+      <input
+        type="text"
+        placeholder="Search proteins by ID, name, or PDB..."
+        [value]="searchQuery()"
+        (input)="searchQuery.set($any($event.target).value)"
+        class="search-input"
+      />
+      @if (searchQuery()) {
+        <button class="clear-btn" (click)="searchQuery.set('')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      }
+    </div>
+
+    <div class="filters-group">
+      <select
+        class="filter-select"
+        [value]="selectedBindingType()"
+        (change)="selectedBindingType.set($any($event.target).value)"
+      >
+        @for (option of bindingTypeOptions; track option.value) {
+          <option [value]="option.value">{{ option.label }}</option>
+        }
+      </select>
+
+      <select
+        class="filter-select"
+        [value]="lengthRange()"
+        (change)="lengthRange.set($any($event.target).value)"
+      >
+        @for (option of lengthOptions; track option.value) {
+          <option [value]="option.value">{{ option.label }}</option>
+        }
+      </select>
+
+      <button class="reset-btn" (click)="resetFilters()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+          <path d="M21 3v5h-5"/>
+        </svg>
+        Reset
+      </button>
+    </div>
+  </div>
+
+  <!-- Data Table -->
+  <div class="table-section">
+    <app-data-table
+      [columns]="columns"
+      [data]="filteredProteins()"
+      [rowKey]="'id'"
+      [emptyMessage]="'No proteins found'"
+    />
+  </div>
+
+  <!-- Charts Section -->
+  <div class="charts-section">
+    <h2 class="section-title">Statistical Analysis</h2>
+    
+    <div class="charts-grid">
+      <!-- Binding Type Distribution -->
+      <div class="chart-card">
+        <h3 class="chart-title">Binding Type Distribution</h3>
+        <div class="chart-container" #bindingTypeChart></div>
+      </div>
+
+      <!-- Protein Length Distribution -->
+      <div class="chart-card">
+        <h3 class="chart-title">Protein Length Distribution</h3>
+        <div class="chart-container" #lengthDistChart></div>
+      </div>
+
+      <!-- F1 Score Distribution -->
+      <div class="chart-card">
+        <h3 class="chart-title">F1 Score Distribution</h3>
+        <div class="chart-container" #f1DistChart></div>
+      </div>
+
+      <!-- MCC Distribution -->
+      <div class="chart-card">
+        <h3 class="chart-title">MCC Distribution</h3>
+        <div class="chart-container" #mccDistChart></div>
+      </div>
+    </div>
+  </div>
+</div>

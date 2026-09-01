@@ -1,0 +1,108 @@
+<div class="benchmark-page">
+  <header class="page-header">
+    <h1 class="page-title">Benchmark Results</h1>
+    <p class="page-subtitle">Performance comparison across different prediction methods</p>
+  </header>
+
+  <div class="benchmark-grid">
+    <!-- TestSet300 Card -->
+    @if (testset300) {
+      <a routerLink="/benchmark/testset300" class="benchmark-card">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <h2>{{ testset300.name }}</h2>
+        <p class="card-description">{{ testset300.description }}</p>
+        
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">Proteins</div>
+            <div class="stat-value">{{ testset300.proteinCount }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Binding Residues</div>
+            <div class="stat-value">{{ testset300.totalBindingResidues }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Avg Length</div>
+            <div class="stat-value">{{ testset300.averageSequenceLength }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Methods</div>
+            <div class="stat-value">{{ testset300.evaluatedMethods }}</div>
+          </div>
+        </div>
+
+        <div class="card-footer">
+          <span class="badge">Primary Dataset</span>
+          <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </div>
+      </a>
+    }
+
+    <!-- TestSet46 Card -->
+    @if (testset46) {
+      <a routerLink="/benchmark/testset46" class="benchmark-card">
+        <div class="card-icon secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <h2>{{ testset46.name }}</h2>
+        <p class="card-description">{{ testset46.description }}</p>
+        
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">Proteins</div>
+            <div class="stat-value">{{ testset46.proteinCount }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Binding Residues</div>
+            <div class="stat-value">{{ testset46.totalBindingResidues }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Avg Length</div>
+            <div class="stat-value">{{ testset46.averageSequenceLength }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Methods</div>
+            <div class="stat-value">{{ testset46.evaluatedMethods }}</div>
+          </div>
+        </div>
+
+        <div class="card-footer">
+          <span class="badge secondary">Validation Set</span>
+          <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </div>
+      </a>
+    }
+  </div>
+
+  <!-- Methods Overview -->
+  <section class="methods-overview">
+    <h2 class="section-title">Methods Compared</h2>
+    <p class="section-subtitle">Four state-of-the-art binding site prediction methods</p>
+    
+    <div class="methods-list">
+      @for (method of methods; track method.id) {
+        <div class="method-item">
+          <div class="method-color" [style.background-color]="method.color"></div>
+          <div class="method-info">
+            <h3>{{ method.name }}</h3>
+            <p>{{ method.description }}</p>
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+</div>

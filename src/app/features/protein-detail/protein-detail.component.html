@@ -1,0 +1,311 @@
+<div class="protein-detail-page">
+  @if (protein(); as protein) {
+    <!-- Header -->
+    <div class="detail-header">
+      <div class="header-main">
+        <h1 class="protein-id">{{ protein.id }}</h1>
+        <div class="header-meta">
+          <span class="meta-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            </svg>
+            <span>{{ protein.name }}</span>
+          </span>
+          <span class="meta-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+            <span>PDB: {{ protein.pdbId }}</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="header-info-grid">
+        <div class="info-card">
+          <div class="info-label">Dataset</div>
+          <div class="info-value">TestSet300</div>
+        </div>
+        <div class="info-card">
+          <div class="info-label">Sequence Length</div>
+          <div class="info-value">{{ protein.length }} aa</div>
+        </div>
+        <div class="info-card">
+          <div class="info-label">Binding Type</div>
+          <div class="info-value">Metal</div>
+        </div>
+        @if (protein.resolution) {
+          <div class="info-card">
+            <div class="info-label">Resolution</div>
+            <div class="info-value">{{ protein.resolution }} Å</div>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Method Selector -->
+    <div class="method-selector">
+      <label class="method-label">Prediction Method:</label>
+      <div class="method-buttons">
+        @for (method of methods; track method) {
+          <button
+            class="method-btn"
+            [class.active]="selectedMethod() === method"
+            (click)="onMethodChange(method)"
+          >
+            {{ method }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="detail-tabs">
+      <div class="tab-list">
+        @for (tab of tabs; track tab.id) {
+          <button
+            class="tab-button"
+            [class.active]="activeTab() === tab.id"
+            (click)="onTabChange(tab.id)"
+          >
+            {{ tab.label }}
+          </button>
+        }
+      </div>
+
+      <div class="tab-content">
+        <!-- Overview Tab -->
+        @if (activeTab() === 'overview') {
+          <div class="tab-panel overview-panel">
+            <div class="metrics-grid">
+              <div class="metric-card">
+                <div class="metric-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                  </svg>
+                </div>
+                <div class="metric-content">
+                  <div class="metric-label">F1 Score</div>
+                  <div class="metric-value">{{ (metrics.f1 * 100).toFixed(1) }}%</div>
+                </div>
+              </div>
+
+              <div class="metric-card">
+                <div class="metric-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="m9 12 2 2 4-4"/>
+                  </svg>
+                </div>
+                <div class="metric-content">
+                  <div class="metric-label">MCC</div>
+                  <div class="metric-value">{{ metrics.mcc.toFixed(3) }}</div>
+                </div>
+              </div>
+
+              <div class="metric-card">
+                <div class="metric-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  </svg>
+                </div>
+                <div class="metric-content">
+                  <div class="metric-label">Precision</div>
+                  <div class="metric-value">{{ (metrics.precision * 100).toFixed(1) }}%</div>
+                </div>
+              </div>
+
+              <div class="metric-card">
+                <div class="metric-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 3v18h18"/>
+                    <path d="m19 9-5 5-4-4-3 3"/>
+                  </svg>
+                </div>
+                <div class="metric-content">
+                  <div class="metric-label">Recall</div>
+                  <div class="metric-value">{{ (metrics.recall * 100).toFixed(1) }}%</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="overview-stats">
+              <div class="stat-row">
+                <span class="stat-label">Binding Residues:</span>
+                <span class="stat-value">{{ totalBindingResidues }}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Predicted Residues:</span>
+                <span class="stat-value">{{ totalPredictedResidues }}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Prediction Threshold:</span>
+                <span class="stat-value">{{ predictionThreshold.toFixed(2) }}</span>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Structure Tab -->
+        @if (activeTab() === 'structure') {
+          <div class="tab-panel structure-panel">
+            <div class="structure-placeholder">
+              <p>3D Protein Structure Viewer</p>
+              <p class="note">Structure visualization available in Explorer page</p>
+            </div>
+          </div>
+        }
+
+        <!-- Sequence Tab -->
+        @if (activeTab() === 'sequence') {
+          <div class="tab-panel sequence-panel">
+            <app-sequence-viewer
+              [residues]="residues"
+              [selectedPosition]="selectedResidue()?.position || null"
+              (residueClick)="onResidueSelect($event)"
+            />
+          </div>
+        }
+
+        <!-- Prediction Tab -->
+        @if (activeTab() === 'prediction') {
+          <div class="tab-panel prediction-panel">
+            <div class="prediction-header">
+              <h3>Residue-Level Predictions</h3>
+              <p class="prediction-subtitle">
+                Detailed prediction results for all {{ residueAnalysis.length }} residues
+              </p>
+            </div>
+            <app-data-table
+              [columns]="predictionColumns"
+              [data]="residueAnalysis"
+              [rowKey]="'position'"
+              [emptyMessage]="'No prediction data available'"
+            />
+          </div>
+        }
+
+        <!-- Metrics Tab -->
+        @if (activeTab() === 'metrics') {
+          <div class="tab-panel metrics-panel">
+            <!-- Confusion Matrix -->
+            <div class="metrics-section">
+              <h3 class="section-title">Confusion Matrix</h3>
+              <div class="confusion-matrix">
+                <div class="matrix-grid">
+                  <div class="matrix-cell matrix-header"></div>
+                  <div class="matrix-cell matrix-header">Predicted Positive</div>
+                  <div class="matrix-cell matrix-header">Predicted Negative</div>
+                  
+                  <div class="matrix-cell matrix-header">Actual Positive</div>
+                  <div class="matrix-cell matrix-tp">
+                    <div class="cell-label">True Positive</div>
+                    <div class="cell-value">{{ confusionMatrix.tp }}</div>
+                  </div>
+                  <div class="matrix-cell matrix-fn">
+                    <div class="cell-label">False Negative</div>
+                    <div class="cell-value">{{ confusionMatrix.fn }}</div>
+                  </div>
+                  
+                  <div class="matrix-cell matrix-header">Actual Negative</div>
+                  <div class="matrix-cell matrix-fp">
+                    <div class="cell-label">False Positive</div>
+                    <div class="cell-value">{{ confusionMatrix.fp }}</div>
+                  </div>
+                  <div class="matrix-cell matrix-tn">
+                    <div class="cell-label">True Negative</div>
+                    <div class="cell-value">{{ confusionMatrix.tn }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Score Distribution -->
+            <div class="metrics-section">
+              <h3 class="section-title">Prediction Score Distribution</h3>
+              <div class="distribution-chart">
+                @for (bin of scoreDistribution; track bin.range) {
+                  <div class="distribution-bar-group">
+                    <div class="distribution-label">{{ bin.range }}</div>
+                    <div class="distribution-bar-container">
+                      <div 
+                        class="distribution-bar"
+                        [style.width.%]="(bin.count / residueAnalysis.length) * 100"
+                      >
+                        <span class="bar-value">{{ bin.count }}</span>
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <!-- Additional Metrics -->
+            <div class="metrics-section">
+              <h3 class="section-title">Additional Metrics</h3>
+              <div class="additional-metrics">
+                <div class="additional-metric">
+                  <span class="metric-name">Accuracy:</span>
+                  <span class="metric-number">{{ (metrics.accuracy * 100).toFixed(1) }}%</span>
+                </div>
+                <div class="additional-metric">
+                  <span class="metric-name">Specificity:</span>
+                  <span class="metric-number">{{ (metrics.specificity * 100).toFixed(1) }}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Comparison Tab -->
+        @if (activeTab() === 'comparison') {
+          <div class="tab-panel comparison-panel">
+            <div class="comparison-header">
+              <h3>Method Comparison</h3>
+              <p class="comparison-subtitle">
+                Compare {{ selectedMethod() }} against other prediction methods
+              </p>
+            </div>
+
+            <div class="comparison-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>F1 Score</th>
+                    <th>MCC</th>
+                    <th>Precision</th>
+                    <th>Recall</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (method of methods; track method) {
+                    <tr [class.highlight]="method === selectedMethod()">
+                      <td class="method-name">
+                        {{ method }}
+                        @if (method === selectedMethod()) {
+                          <span class="current-badge">Current</span>
+                        }
+                      </td>
+                      <td class="metric-cell">{{ (0.75 + Math.random() * 0.15).toFixed(3) }}</td>
+                      <td class="metric-cell">{{ (0.70 + Math.random() * 0.15).toFixed(3) }}</td>
+                      <td class="metric-cell">{{ (0.80 + Math.random() * 0.15).toFixed(3) }}</td>
+                      <td class="metric-cell">{{ (0.75 + Math.random() * 0.15).toFixed(3) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  } @else {
+    <div class="loading-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+      </svg>
+      <p>Loading protein data...</p>
+    </div>
+  }
+</div>

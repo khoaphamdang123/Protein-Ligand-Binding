@@ -16,9 +16,9 @@
     <!-- Desktop Navigation -->
     <nav class="navbar-nav desktop-only">
       <a routerLink="/explore" routerLinkActive="active" class="nav-link">Explore</a>
-      <a routerLink="/benchmark" routerLinkActive="active" class="nav-link">Benchmarks</a>
-      <a routerLink="/compare" routerLinkActive="active" class="nav-link">Compare</a>
-      <a routerLink="/methods" routerLinkActive="active" class="nav-link">Methods</a>
+      <a routerLink="/predict" routerLinkActive="active" class="nav-link">Predict</a>
+      <a routerLink="/benchmark" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }" class="nav-link">Benchmarks</a>
+      <a routerLink="/benchmark/curves" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }" class="nav-link">ROC &amp; PR</a>
       <!-- <a routerLink="/about" routerLinkActive="active" class="nav-link">About</a> -->
     </nav>
 
@@ -122,9 +122,23 @@
           </svg>
           <span>Explore</span>
         </a>
+        <a
+          routerLink="/predict"
+          routerLinkActive="active"
+          class="mobile-nav-link"
+          (click)="closeMobileMenu()"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 1v2M12 21v2M1 12h2M21 12h2"/>
+          </svg>
+          <span>Predict</span>
+        </a>
         <a 
-          routerLink="/benchmark" 
+          routerLink="/benchmark"
           routerLinkActive="active" 
+          [routerLinkActiveOptions]="{ exact: true }"
           class="mobile-nav-link"
           (click)="closeMobileMenu()"
         >
@@ -133,31 +147,18 @@
           </svg>
           <span>Benchmarks</span>
         </a>
-        <a 
-          routerLink="/compare" 
-          routerLinkActive="active" 
+        <a
+          routerLink="/benchmark/curves"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: true }"
           class="mobile-nav-link"
           (click)="closeMobileMenu()"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="7"/>
-            <rect x="14" y="3" width="7" height="7"/>
-            <rect x="14" y="14" width="7" height="7"/>
-            <rect x="3" y="14" width="7" height="7"/>
+            <path d="M3 3v18h18"/>
+            <path d="m7 14 4-4 4 3 5-7"/>
           </svg>
-          <span>Compare</span>
-        </a>
-        <a 
-          routerLink="/methods" 
-          routerLinkActive="active" 
-          class="mobile-nav-link"
-          (click)="closeMobileMenu()"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 1v6M12 17v6M5.64 5.64l4.24 4.24M14.12 14.12l4.24 4.24M1 12h6M17 12h6"/>
-          </svg>
-          <span>Methods</span>
+          <span>ROC &amp; PR</span>
         </a>
         <!-- <a 
           routerLink="/about" 

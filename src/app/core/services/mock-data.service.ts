@@ -41,28 +41,40 @@ export class MockDataService {
   getDatasets(): Observable<Dataset[]> {
     const datasets: Dataset[] = [
       {
-        id: 'testset300',
-        name: 'TestSet300',
-        description: '300 protein structures for comprehensive benchmark analysis',
+        id: 'devset1010',
+        name: 'DevSet1010',
+        description: 'Development set (structure-compatible subset) used for feature and architecture selection',
         type: 'TestSet300',
-        proteinCount: 300,
-        totalBindingResidues: 12450,
-        averageSequenceLength: 342,
-        avgSequenceLength: 342,
-        evaluatedMethods: 4,
-        avgBindingSites: 41.5
+        proteinCount: 1010,
+        totalBindingResidues: 14295,
+        averageSequenceLength: 168,
+        avgSequenceLength: 168,
+        evaluatedMethods: 3,
+        avgBindingSites: 14.2
       },
       {
-        id: 'testset46',
-        name: 'TestSet46',
-        description: '46 curated protein structures for validation',
-        type: 'TestSet46',
+        id: 'testset300',
+        name: 'TestSet300',
+        description: 'Primary benchmark — 300 protein structures (<20% sequence identity to development proteins)',
+        type: 'TestSet300',
+        proteinCount: 300,
+        totalBindingResidues: 6257,
+        averageSequenceLength: 209,
+        avgSequenceLength: 209,
+        evaluatedMethods: 3,
+        avgBindingSites: 20.9
+      },
+      {
+        id: 'testsetnew46',
+        name: 'TestSetNew46',
+        description: 'External validation set — 46 proteins inheriting the stringent homology filter',
+        type: 'TestSetNew46',
         proteinCount: 46,
-        totalBindingResidues: 1876,
-        averageSequenceLength: 385,
-        avgSequenceLength: 385,
-        evaluatedMethods: 4,
-        avgBindingSites: 40.8
+        totalBindingResidues: 579,
+        averageSequenceLength: 135,
+        avgSequenceLength: 135,
+        evaluatedMethods: 3,
+        avgBindingSites: 12.6
       }
     ];
     return of(datasets).pipe(delay(200));
@@ -72,7 +84,7 @@ export class MockDataService {
     const protein = this.proteins().find(p => p.id === proteinId);
     if (!protein) return of([]);
 
-    const methods: PredictionMethod[] = ['ESM-ORION', 'BindNode24', 'bindEmbed21DL', 'P2Rank'];
+    const methods: PredictionMethod[] = ['AdaBind', 'bindEmbed21DL', 'bindNode24'];
     const results = methods.map(method => this.generatePredictionResult(protein, method));
 
     return of(results).pipe(delay(400));
@@ -80,7 +92,7 @@ export class MockDataService {
 
   getPredictions(): PredictionResult[] {
     const allPredictions: PredictionResult[] = [];
-    const methods: PredictionMethod[] = ['ESM-ORION', 'BindNode24', 'bindEmbed21DL', 'P2Rank'];
+    const methods: PredictionMethod[] = ['AdaBind', 'bindEmbed21DL', 'bindNode24'];
     
     this.proteins().slice(0, 20).forEach(protein => {
       methods.forEach(method => {
@@ -97,7 +109,7 @@ export class MockDataService {
 
   getComparisonData(proteinId: string): Observable<ComparisonData> {
     const protein = this.proteins().find(p => p.id === proteinId)!;
-    const methods: PredictionMethod[] = ['ESM-ORION', 'BindNode24', 'bindEmbed21DL', 'P2Rank'];
+    const methods: PredictionMethod[] = ['AdaBind', 'bindEmbed21DL', 'bindNode24'];
 
     const comparisonData: ComparisonData = {
       protein,
@@ -113,19 +125,19 @@ export class MockDataService {
   }
 
   getDatasetStatistics(dataset: DatasetType): Observable<DatasetStatistics> {
+    const is300 = dataset === 'TestSet300';
     const stats: DatasetStatistics = {
       dataset,
-      totalProteins: dataset === 'TestSet300' ? 300 : 46,
-      totalResidues: dataset === 'TestSet300' ? 95000 : 14500,
-      totalBindingResidues: dataset === 'TestSet300' ? 8500 : 1300,
-      bindingRatio: 0.089,
-      avgProteinLength: dataset === 'TestSet300' ? 316 : 315,
+      totalProteins: is300 ? 300 : 46,
+      totalResidues: is300 ? 62689 : 6227,
+      totalBindingResidues: is300 ? 6257 : 579,
+      bindingRatio: is300 ? 0.0998 : 0.093,
+      avgProteinLength: is300 ? 209 : 135,
       methodPerformance: [
-        { method: 'ESM-ORION', avgPrecision: 0.78, avgRecall: 0.82, avgF1: 0.80 },
-        { method: 'BindNode24', avgPrecision: 0.65, avgRecall: 0.71, avgF1: 0.68 },
-        { method: 'bindEmbed21DL', avgPrecision: 0.71, avgRecall: 0.75, avgF1: 0.73 },
-        { method: 'P2Rank', avgPrecision: 0.68, avgRecall: 0.73, avgF1: 0.70 },
-      ],
+        { method: 'AdaBind', avgPrecision: 0.47, avgRecall: 0.453, avgF1: 0.461 },
+        { method: 'bindEmbed21DL', avgPrecision: 0.45, avgRecall: 0.412, avgF1: 0.43 },
+        { method: 'bindNode24', avgPrecision: 0.46, avgRecall: 0.422, avgF1: 0.44 }
+      ]
     };
 
     return of(stats).pipe(delay(300));
@@ -209,10 +221,9 @@ export class MockDataService {
 
   private generateMockMetrics(proteinId: string, method: PredictionMethod): BenchmarkMetrics {
     const baseScores: Record<PredictionMethod, number> = {
-      'ESM-ORION': 0.80,
-      'BindNode24': 0.68,
-      'bindEmbed21DL': 0.73,
-      'P2Rank': 0.70,
+      'AdaBind': 0.461,
+      'bindEmbed21DL': 0.43,
+      'bindNode24': 0.44
     };
 
     const base = baseScores[method];

@@ -103,6 +103,18 @@
   color: var(--color-text-tertiary);
 }
 
+.dataset-note {
+  margin: var(--space-3) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+
+  strong {
+    color: var(--color-primary);
+    font-weight: var(--font-weight-semibold);
+  }
+}
+
 /* Method Buttons */
 .method-buttons {
   display: flex;

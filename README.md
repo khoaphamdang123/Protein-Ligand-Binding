@@ -1,8 +1,8 @@
 # BindSite Explorer
 
-**Explore Protein Binding Sites with ESM-ORION**
+**Explore Protein Binding Sites with AdaBind**
 
-Interactive visualization and benchmark analysis of binding-site prediction methods on TestSet300 and TestSet46.
+Interactive visualization and benchmark analysis of ligand-class-specific binding-residue prediction (AdaBind) on TestSet300 and TestSetNew46.
 
 ---
 
@@ -181,26 +181,32 @@ src/app/
 
 ## 📄 数据集
 
-### TestSet300
-- **Proteins**: 300
-- **Binding Residues**: 12,450
-- **Avg. Sequence Length**: 342
-- **Evaluated Methods**: 4
+### DevSet1010 (Development)
+- **Proteins**: 1,010
+- **Residues**: 170,181
+- **Ligand classes**: metal (1.39%), nucleic acid (1.58%), small molecule (5.43%)
 
-### TestSet46
+### TestSet300 (Primary benchmark)
+- **Proteins**: 300
+- **Residues**: 62,689
+- **Binding Residues**: 6,257
+- **Avg. Sequence Length**: 209
+- **Homology filter**: <20% sequence identity
+
+### TestSetNew46 (External validation)
 - **Proteins**: 46
-- **Binding Residues**: 1,876
-- **Avg. Sequence Length**: 385
-- **Evaluated Methods**: 4
+- **Residues**: 6,227
+- **Binding Residues**: 579
+- **Avg. Sequence Length**: 135
+- **Homology filter**: <20% sequence identity
 
 ---
 
 ## 🔍 预测方法
 
-1. **ESM-ORION** - 基于 ESM 的结合位点预测
-2. **FPocket** - 基于几何的口袋检测
-3. **DeepSite** - 深度学习方法
-4. **P2Rank** - 机器学习方法
+1. **AdaBind** - Ligand-class-specific multimodal representations (ESM-2 + coordination/pocket descriptors)
+2. **bindEmbed21DL** - ProtT5 embeddings with a shallow convolutional network
+3. **bindNode24** - Graph neural network incorporating structural proximity
 
 ---
 

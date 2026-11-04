@@ -1,4 +1,4 @@
-export type DatasetType = 'TestSet300' | 'TestSet46';
+export type DatasetType = 'TestSet300' | 'TestSetNew46';
 
 export interface Dataset {
   id: string;

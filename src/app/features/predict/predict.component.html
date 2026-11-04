@@ -1,0 +1,286 @@
+<div class="predict-page">
+  <!-- Header -->
+  <div class="page-header">
+    <h1 class="page-title">Predict Binding Residues</h1>
+    <p class="page-subtitle">Paste a protein sequence or upload a PDB structure, choose a ligand class, and AdaBind marks the residues predicted to bind it.</p>
+  </div>
+
+  <div class="content">
+    <!-- Backend status -->
+    <div class="status-bar">
+      @if (health(); as h) {
+        <span class="chip" [class.ok]="h.status === 'ok'" [class.error]="h.status !== 'ok'">
+          Backend {{ h.status === 'ok' ? 'online' : 'degraded' }}
+        </span>
+        <span class="chip" [class.warning]="h.mock" [class.ok]="!h.mock">
+          Model: {{ h.mock ? 'MOCK (pbind not installed)' : 'AdaBind · ' + h.profile }}
+        </span>
+        <span class="chip mono">model_version {{ h.model_version ? h.model_version.slice(0, 12) : 'unavailable' }}</span>
+      } @else if (healthError(); as e) {
+        <span class="chip error">{{ e.code === 'PROXY_MISSING' ? 'API proxy missing' : 'Backend offline' }}</span>
+        <span class="status-message">{{ e.message }}</span>
+      } @else {
+        <span class="chip">Checking backend…</span>
+      }
+      <span class="spacer"></span>
+      <button type="button" class="link-btn" (click)="refreshStatus()">Refresh</button>
+      <button type="button" class="link-btn" (click)="showDiagnostics.set(!showDiagnostics())"
+              [attr.aria-expanded]="showDiagnostics()">
+        {{ showDiagnostics() ? 'Hide' : 'Show' }} diagnostics
+        @if (errorCount()) { <span class="count">{{ errorCount() }}</span> }
+      </button>
+    </div>
+
+    @if (showDiagnostics()) {
+      <div class="card">
+        @if (diagnostics()) {
+          <app-diagnostics-panel [diagnostics]="diagnostics()" />
+        } @else {
+          <p class="muted">Diagnostics unavailable: the backend is not reachable.</p>
+        }
+      </div>
+    }
+
+    <!-- Input -->
+    <div class="card input-card">
+      <div class="input-tabs" role="tablist" aria-label="Input type">
+        <button type="button" class="input-tab" role="tab"
+                [class.active]="inputMode() === 'sequence'" [attr.aria-selected]="inputMode() === 'sequence'"
+                (click)="inputMode.set('sequence')">Paste sequence</button>
+        <button type="button" class="input-tab" role="tab"
+                [class.active]="inputMode() === 'pdb'" [attr.aria-selected]="inputMode() === 'pdb'"
+                (click)="inputMode.set('pdb')">Upload PDB</button>
+      </div>
+
+      <div class="input-main">
+        @if (inputMode() === 'sequence') {
+          <div class="field-head">
+            <label for="sequence" class="control-label">Protein sequence</label>
+            <div class="examples">
+              <span>Examples:</span>
+              @for (example of examples; track example.name) {
+                <button type="button" class="link-btn" (click)="sequenceInput.set(example.sequence)">{{ example.name }}</button>
+              }
+            </div>
+          </div>
+          <textarea
+            id="sequence"
+            class="sequence-input"
+            rows="6"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder=">optional FASTA header&#10;MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQ..."
+            [value]="sequenceInput()"
+            (input)="onSequenceInput($event)"
+            (keydown.control.enter)="predict()"
+          ></textarea>
+          <div class="field-foot">
+            @if (check().error) {
+              <span class="invalid" role="alert">{{ check().error }}</span>
+            } @else if (check().sequence) {
+              <span class="valid">{{ check().sequence.length }} residues ✓</span>
+            } @else {
+              <span class="muted">{{ minLength() }}–{{ maxLength() }} residues, 20 standard amino acids; a FASTA header is optional.</span>
+            }
+            @if (sequenceInput()) {
+              <button type="button" class="link-btn" (click)="sequenceInput.set('')">Clear</button>
+            }
+          </div>
+        } @else {
+          <label class="pdb-drop">
+            <input type="file" accept=".pdb,.ent" class="pdb-file-input" (change)="onPdbFileSelected($event)" />
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <span class="pdb-drop-title">{{ pdbFileName() ?? 'Choose a PDB file' }}</span>
+            <span class="pdb-drop-hint">.pdb or .ent — chain A is used directly (no ESMFold).</span>
+          </label>
+          <div class="field-foot">
+            @if (pdbCheck().error) {
+              <span class="invalid" role="alert">{{ pdbCheck().error }}</span>
+            } @else if (pdbCheck().valid) {
+              <span class="valid">{{ pdbInput().split('\n').filter(l => l.startsWith('ATOM')).length }} ATOM records ✓</span>
+            } @else {
+              <span class="muted">Upload a PDB structure to predict its binding residues.</span>
+            }
+            @if (pdbInput()) {
+              <button type="button" class="link-btn" (click)="clearPdb()">Clear</button>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="input-side">
+        <span class="control-label">Binding type</span>
+        <div class="type-options" role="radiogroup" aria-label="Binding type">
+          @for (t of bindingTypes; track t.value) {
+            <button type="button" class="type-option" role="radio"
+                    [class.active]="bindingType() === t.value"
+                    [attr.aria-checked]="bindingType() === t.value"
+                    (click)="bindingType.set(t.value)">
+              <span class="type-label">{{ t.label }}</span>
+              <span class="type-ligands">{{ t.ligands }}</span>
+            </button>
+          }
+        </div>
+        @if (loading()) {
+          <button type="button" class="btn btn-secondary" (click)="cancel()">Cancel · {{ elapsed() }} s</button>
+          <p class="hint"><span class="spinner"></span>{{ inputMode() === 'pdb' ? 'Scoring residues…' : 'Folding with ESMFold (7–25 s), then scoring residues…' }}</p>
+        } @else {
+          <button type="button" class="btn btn-primary" [disabled]="!canSubmit()" (click)="predict()">Predict</button>
+          <p class="hint">{{ inputMode() === 'pdb' ? 'Uses the uploaded structure directly (chain A).' : 'Ctrl+Enter in the sequence box also runs it.' }}</p>
+        }
+      </div>
+    </div>
+
+    <!-- Error -->
+    @if (error(); as e) {
+      <div class="alert alert-error" role="alert">
+        <div class="alert-title">
+          <strong>{{ errorTitle(e) }}</strong>
+          <span class="mono muted">{{ e.code }}@if (e.status) { · HTTP {{ e.status }} }@if (e.requestId) { · request {{ e.requestId }} }</span>
+        </div>
+        <p>{{ e.message }}</p>
+        @if (canRetry(e)) {
+          <button type="button" class="btn btn-secondary btn-sm" (click)="predict()">Try again</button>
+        }
+      </div>
+    }
+
+    <!-- Results -->
+    @if (result(); as r) {
+      @if (r.mock) {
+        <div class="alert alert-warning" role="status">
+          <strong>Demo predictions.</strong>
+          The AdaBind inference code (pbind) is not installed yet, so these binding probabilities are synthetic.
+          The 3D structure and pLDDT are real (ESMFold).
+        </div>
+      }
+
+      @if (summary(); as s) {
+        <div class="summary">
+          <div class="metric">
+            <span class="metric-label">Binding residues · {{ r.binding_type }}</span>
+            <span class="metric-value">{{ s.nBinding }} <small>/ {{ r.length }} ({{ s.fraction | percent: '1.0-1' }})</small></span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Threshold</span>
+            <span class="metric-value">{{ r.threshold | number: '1.4-4' }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Mean pLDDT</span>
+            <span class="metric-value">{{ s.meanPlddt | number: '1.2-2' }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Low confidence (pLDDT &lt; {{ lowPlddt }})</span>
+            <span class="metric-value">{{ s.lowConfidence }} <small>residues · {{ s.bindingInLowConfidence }} binding</small></span>
+          </div>
+          @if (r.timing) {
+            <div class="metric">
+              <span class="metric-label">Time</span>
+              <span class="metric-value">{{ r.timing.total_s | number: '1.1-1' }} s <small>{{ r.structure.source === 'upload' ? 'uploaded structure' : (r.structure.cached ? 'structure cached' : 'incl. ESMFold') }}</small></span>
+            </div>
+          }
+        </div>
+      }
+
+      <div class="results-grid">
+        <div class="card viewer-card">
+          <div class="card-head">
+            <h3>Structure <small>{{ r.structure.source === 'upload' ? 'Uploaded' : 'ESMFold' }}</small></h3>
+            <div class="segmented" role="group" aria-label="Colour by">
+              <button type="button" [class.active]="colorMode() === 'probability'" (click)="colorMode.set('probability')">Binding probability</button>
+              <button type="button" [class.active]="colorMode() === 'plddt'" (click)="colorMode.set('plddt')">pLDDT</button>
+            </div>
+          </div>
+          <app-prediction-viewer
+            class="viewer"
+            [pdb]="r.structure.pdb"
+            [sequence]="r.sequence"
+            [probability]="r.probability"
+            [binding]="r.binding"
+            [plddt]="r.structure.plddt"
+            [colorMode]="colorMode()"
+            [selectedIndex]="selectedIndex()"
+            (residueSelect)="selectResidue($event)"
+          />
+          <div class="legend">
+            @if (colorMode() === 'probability') {
+              <span>0</span><span class="gradient" [style.background]="probabilityGradient"></span><span>1</span>
+              <span class="muted">· sticks = predicted binding (p ≥ {{ r.threshold | number: '1.3-3' }})</span>
+            } @else {
+              @for (band of plddtBands; track band.min) {
+                <span class="swatch" [style.background-color]="band.color"></span><span>{{ band.label }}</span>
+              }
+            }
+          </div>
+        </div>
+
+        <div class="card residues-card">
+          <div class="card-head">
+            <h3>Predicted binding residues</h3>
+            <button type="button" class="link-btn" (click)="downloadJson()">Download JSON</button>
+          </div>
+          @if (bindingRows().length) {
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr><th>Residue</th><th>Probability</th><th>pLDDT</th></tr>
+                </thead>
+                <tbody>
+                  @for (b of bindingRows(); track b.index) {
+                    <tr [class.selected]="selectedIndex() === b.index" (click)="selectResidue(b.index)">
+                      <td class="mono">{{ b.aa }}{{ b.index }}</td>
+                      <td class="mono">{{ b.probability | number: '1.3-3' }}</td>
+                      <td class="mono" [class.low]="b.plddt < lowPlddt">{{ b.plddt | number: '1.2-2' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <p class="muted">
+              No residue reaches the {{ r.binding_type }} threshold ({{ r.threshold | number: '1.3-3' }}).
+              The protein may not bind this ligand class, or the binding site is not recognised.
+            </p>
+          }
+          @if (selectedResidue(); as sel) {
+            <div class="selected-info">
+              Selected <b>{{ sel.aa }}{{ sel.index }}</b> · p = {{ sel.probability | number: '1.3-3' }}
+              · pLDDT {{ sel.plddt | number: '1.2-2' }} · {{ sel.binding ? 'predicted binding' : 'not binding' }}
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Sequence</h3>
+          <span class="muted small">colour = binding probability · outlined = predicted binding · bar = pLDDT · click a residue to locate it</span>
+        </div>
+        <app-probability-track
+          [sequence]="r.sequence"
+          [probability]="r.probability"
+          [binding]="r.binding"
+          [plddt]="r.structure.plddt"
+          [selectedIndex]="selectedIndex()"
+          (residueSelect)="selectResidue($event)"
+        />
+      </div>
+    } @else if (!loading() && !error()) {
+      <div class="empty">Results will appear here: per-residue binding probability, the predicted 3D structure and its confidence.</div>
+    }
+
+    <!-- Notes -->
+    <div class="card notes">
+      <h3>How to read the results</h3>
+      <ul>
+        <li>Each ligand class has its own model and threshold, so probabilities are not comparable across classes. Metal uses a high threshold: few residues are marked, but most of them are correct.</li>
+        <li>Where pLDDT is below {{ lowPlddt }}, the predicted structure, and the structure-based prediction there, is less reliable.</li>
+        <!-- <li>This is a research aid that suggests candidate residues; it does not replace experiments.</li> -->
+      </ul>
+    </div>
+  </div>
+</div>

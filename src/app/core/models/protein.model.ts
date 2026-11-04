@@ -38,6 +38,8 @@ export interface PredictionResult {
   timestamp: string;
 }
 
+
+
 export interface BenchmarkMetrics {
   proteinId: string;
   method: string;

@@ -11,7 +11,7 @@ export class ProteinStateService {
   readonly selectedProtein = signal<Protein | null>(null);
   readonly selectedDataset = signal<DatasetType>('TestSet300');
   readonly predictions = signal<PredictionResult[]>([]);
-  readonly selectedMethod = signal<string>('ESM-ORION');
+  readonly selectedMethod = signal<string>('AdaBind');
   readonly metrics = signal<BenchmarkMetrics | null>(null);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);

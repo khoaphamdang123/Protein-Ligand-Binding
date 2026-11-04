@@ -35,7 +35,7 @@ export class ProteinDetailComponent implements OnInit {
 
   protein = signal<Protein | null>(null);
   prediction = signal<PredictionResult | null>(null);
-  selectedMethod = signal<PredictionMethod>('ESM-ORION');
+  selectedMethod = signal<PredictionMethod>('AdaBind');
   activeTab = signal<TabId>('overview');
   selectedResidue = signal<Residue | null>(null);
 
@@ -49,17 +49,17 @@ export class ProteinDetailComponent implements OnInit {
   ];
 
   // Methods for comparison
-  methods: PredictionMethod[] = ['ESM-ORION', 'BindNode24', 'bindEmbed21DL', 'P2Rank'];
+  methods: PredictionMethod[] = ['AdaBind', 'bindEmbed21DL', 'bindNode24'];
   Math = Math;
 
-  // Metrics
+  // Metrics (AdaBind, any-ligand TestSet300)
   metrics = {
-    f1: 0.847,
-    mcc: 0.782,
-    precision: 0.891,
-    recall: 0.806,
-    accuracy: 0.923,
-    specificity: 0.945
+    f1: 0.4611,
+    mcc: 0.4127,
+    precision: 0.470,
+    recall: 0.453,
+    accuracy: 0.951,
+    specificity: 0.970
   };
 
   // Confusion matrix

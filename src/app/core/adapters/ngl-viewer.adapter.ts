@@ -348,6 +348,21 @@ export class NGLViewerAdapter implements MolecularViewerAdapter {
         });
       }
 
+      // True Negatives (TN) - gray
+      const tnResidues = this.bindingResidues.filter(r => r.status === 'TN');
+      if (tnResidues.length > 0) {
+        const selection = tnResidues
+          .map(r => `${r.residueNumber || r.position}:${r.chainId}`)
+          .join(' or ');
+        
+        this.structureComponent.addRepresentation('ball+stick', {
+          sele: selection,
+          color: '#64748B',
+          scale: 0.8,
+          name: 'prediction-highlight'
+        });
+      }
+
       // False Positives (FP) - orange
       const fpResidues = this.bindingResidues.filter(r => r.status === 'FP');
       if (fpResidues.length > 0) {

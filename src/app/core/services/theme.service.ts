@@ -6,7 +6,9 @@ export type Theme = 'dark' | 'light';
   providedIn: 'root'
 })
 export class ThemeService {
-  private readonly THEME_STORAGE_KEY = 'bindsite-theme';
+  // Bump the key so users who previously inherited a light system preference
+  // get the requested dark default once; manual choices after that persist.
+  private readonly THEME_STORAGE_KEY = 'bindsite-theme-v2';
   
   // Current theme signal
   readonly theme = signal<Theme>(this.getInitialTheme());
@@ -22,15 +24,6 @@ export class ThemeService {
       this.saveTheme(currentTheme);
     });
     
-    // Listen for system theme changes
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
-      prefersDark.addEventListener('change', (e) => {
-        if (!this.hasStoredTheme()) {
-          this.setTheme(e.matches ? 'dark' : 'light');
-        }
-      });
-    }
   }
 
   /**
@@ -48,22 +41,11 @@ export class ThemeService {
   }
 
   /**
-   * Get initial theme from storage or system preference
+   * Default to dark unless the user has explicitly chosen a theme.
    */
   private getInitialTheme(): Theme {
     const stored = this.getStoredTheme();
-    if (stored) {
-      return stored;
-    }
-    
-    // Fall back to system preference
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
-      return prefersDark.matches ? 'dark' : 'light';
-    }
-    
-    // Default to dark theme
-    return 'dark';
+    return stored ?? 'dark';
   }
 
   /**
@@ -79,13 +61,6 @@ export class ThemeService {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Check if theme is stored
-   */
-  private hasStoredTheme(): boolean {
-    return this.getStoredTheme() !== null;
   }
 
   /**

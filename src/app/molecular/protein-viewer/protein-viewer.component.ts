@@ -17,7 +17,7 @@ export class ProteinViewerComponent implements OnInit, AfterViewInit, OnDestroy 
   
   @Input() protein: Protein | null = null;
   @Input() selectedResidue: Residue | null = null;
-  @Input() method: PredictionMethod = 'ESM-ORION';
+  @Input() method: PredictionMethod = 'AdaBind';
 
   private viewerService = inject(ProteinViewerService);
   private platformId = inject(PLATFORM_ID);
@@ -230,6 +230,7 @@ export class ProteinViewerComponent implements OnInit, AfterViewInit, OnDestroy 
   getStatusColor(status: string): string {
     switch (status) {
       case 'TP': return '#10B981';
+      case 'TN': return '#64748B';
       case 'FP': return '#F97316';
       case 'FN': return '#EF4444';
       default: return '#94A3B8';

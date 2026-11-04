@@ -233,7 +233,7 @@
           <h3 class="section-title">Benchmark Results</h3>
           <div class="benchmark-grid">
             <div class="benchmark-card">
-              <h4 class="benchmark-title">TestSet300</h4>
+              <h4 class="benchmark-title">TestSet300 (any-ligand)</h4>
               <div class="benchmark-metrics">
                 <div class="bm-item">
                   <span class="bm-label">F1</span>
@@ -253,27 +253,31 @@
                 </div>
               </div>
             </div>
-            <div class="benchmark-card">
-              <h4 class="benchmark-title">TestSet46</h4>
-              <div class="benchmark-metrics">
-                <div class="bm-item">
-                  <span class="bm-label">F1</span>
-                  <span class="bm-value">{{ formatMetric(method.metrics.testset46.f1) }}</span>
-                </div>
-                <div class="bm-item">
-                  <span class="bm-label">MCC</span>
-                  <span class="bm-value">{{ formatMetric(method.metrics.testset46.mcc) }}</span>
-                </div>
-                <div class="bm-item">
-                  <span class="bm-label">Precision</span>
-                  <span class="bm-value">{{ formatMetric(method.metrics.testset46.precision) }}</span>
-                </div>
-                <div class="bm-item">
-                  <span class="bm-label">Recall</span>
-                  <span class="bm-value">{{ formatMetric(method.metrics.testset46.recall) }}</span>
+            @if (method.metrics.testsetnew46; as ext) {
+              <div class="benchmark-card">
+                <h4 class="benchmark-title">
+                  {{ method.metrics.testsetnew46Label || 'TestSetNew46' }}
+                </h4>
+                <div class="benchmark-metrics">
+                  <div class="bm-item">
+                    <span class="bm-label">F1</span>
+                    <span class="bm-value">{{ formatMetric(ext.f1) }}</span>
+                  </div>
+                  <div class="bm-item">
+                    <span class="bm-label">MCC</span>
+                    <span class="bm-value">{{ formatMetric(ext.mcc) }}</span>
+                  </div>
+                  <div class="bm-item">
+                    <span class="bm-label">Precision</span>
+                    <span class="bm-value">{{ formatMetric(ext.precision) }}</span>
+                  </div>
+                  <div class="bm-item">
+                    <span class="bm-label">Recall</span>
+                    <span class="bm-value">{{ formatMetric(ext.recall) }}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            }
           </div>
         </section>
 

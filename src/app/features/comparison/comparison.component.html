@@ -17,17 +17,13 @@
           (click)="setDataset('testset300')"
         >
           <span class="dataset-name">TestSet300</span>
-          <span class="dataset-count">300 proteins</span>
-        </button>
-        <button
-          class="dataset-btn"
-          [class.active]="selectedDataset() === 'testset46'"
-          (click)="setDataset('testset46')"
-        >
-          <span class="dataset-name">TestSet46</span>
-          <span class="dataset-count">46 proteins</span>
+          <span class="dataset-count">300 proteins · any-ligand</span>
         </button>
       </div>
+      <p class="dataset-note">
+        Any-ligand results from AdaBind (Table 3). External validation (TestSetNew46):
+        AdaBind reaches <strong>metal-binding F1 70.7% / MCC 71.3%</strong>.
+      </p>
     </div>
 
     <!-- Method Selector -->

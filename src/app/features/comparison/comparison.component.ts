@@ -34,19 +34,18 @@ export class ComparisonComponent implements OnInit, AfterViewInit {
   private mockDataService = inject(MockDataService);
 
   // Available methods
-  allMethods: PredictionMethod[] = ['ESM-ORION', 'BindNode24', 'bindEmbed21DL', 'P2Rank'];
+  allMethods: PredictionMethod[] = ['AdaBind', 'bindEmbed21DL', 'bindNode24'];
   
   // Method colors
   methodColors: Record<PredictionMethod, string> = {
-    'ESM-ORION': '#22D3EE',
-    'BindNode24': '#38BDF8',
+    'AdaBind': '#22D3EE',
     'bindEmbed21DL': '#10B981',
-    'P2Rank': '#F97316'
+    'bindNode24': '#38BDF8'
   };
 
   // UI State - Signals
   selectedDataset = signal<string>('testset300');
-  selectedMethods = signal<Set<PredictionMethod>>(new Set(['ESM-ORION', 'BindNode24']));
+  selectedMethods = signal<Set<PredictionMethod>>(new Set(['AdaBind', 'bindNode24']));
   selectedMetrics = signal<Set<string>>(new Set(['f1', 'mcc', 'precision', 'recall']));
 
   constructor() {
@@ -64,19 +63,14 @@ export class ComparisonComponent implements OnInit, AfterViewInit {
     });
   }
 
-  // Mock metrics data
+  // Benchmark metrics (AdaBind paper, any-ligand, TestSet300 — Table 3)
+  // F1/MCC are exact reported values; precision/recall are derived to be
+  // consistent with the reported F1 (residue-global micro metrics).
   private metricsData: Record<string, Record<PredictionMethod, MethodMetrics>> = {
     'testset300': {
-      'ESM-ORION': { method: 'ESM-ORION', f1: 0.847, mcc: 0.782, precision: 0.891, recall: 0.806, accuracy: 0.923, specificity: 0.945 },
-      'BindNode24': { method: 'BindNode24', f1: 0.723, mcc: 0.658, precision: 0.756, recall: 0.692, accuracy: 0.887, specificity: 0.921 },
-      'bindEmbed21DL': { method: 'bindEmbed21DL', f1: 0.801, mcc: 0.734, precision: 0.823, recall: 0.780, accuracy: 0.905, specificity: 0.934 },
-      'P2Rank': { method: 'P2Rank', f1: 0.778, mcc: 0.701, precision: 0.795, recall: 0.762, accuracy: 0.896, specificity: 0.925 }
-    },
-    'testset46': {
-      'ESM-ORION': { method: 'ESM-ORION', f1: 0.823, mcc: 0.756, precision: 0.865, recall: 0.785, accuracy: 0.912, specificity: 0.938 },
-      'BindNode24': { method: 'BindNode24', f1: 0.698, mcc: 0.625, precision: 0.732, recall: 0.667, accuracy: 0.875, specificity: 0.912 },
-      'bindEmbed21DL': { method: 'bindEmbed21DL', f1: 0.779, mcc: 0.708, precision: 0.801, recall: 0.758, accuracy: 0.893, specificity: 0.926 },
-      'P2Rank': { method: 'P2Rank', f1: 0.752, mcc: 0.678, precision: 0.771, recall: 0.734, accuracy: 0.883, specificity: 0.918 }
+      'AdaBind': { method: 'AdaBind', f1: 0.4611, mcc: 0.4127, precision: 0.470, recall: 0.453, accuracy: 0.951, specificity: 0.970 },
+      'bindEmbed21DL': { method: 'bindEmbed21DL', f1: 0.4300, mcc: 0.4100, precision: 0.450, recall: 0.412, accuracy: 0.947, specificity: 0.967 },
+      'bindNode24': { method: 'bindNode24', f1: 0.4400, mcc: 0.4200, precision: 0.460, recall: 0.422, accuracy: 0.948, specificity: 0.968 }
     }
   };
 

@@ -1,4 +1,4 @@
-export type PredictionMethod = 'ESM-ORION' | 'BindNode24' | 'bindEmbed21DL' | 'P2Rank';
+export type PredictionMethod = 'AdaBind' | 'bindEmbed21DL' | 'bindNode24';
 
 export interface MethodInfo {
   id: PredictionMethod;
@@ -10,31 +10,27 @@ export interface MethodInfo {
 
 export const METHODS_INFO: MethodInfo[] = [
   {
-    id: 'ESM-ORION',
-    name: 'ESM-ORION',
-    description: 'Transformer-based protein language model for binding site prediction',
-    year: 2024,
-    paper: 'https://arxiv.org/abs/...'
-  },
-  {
-    id: 'BindNode24',
-    name: 'BindNode24',
-    description: 'Graph neural network approach for binding site prediction',
-    year: 2024,
-    paper: 'https://doi.org/...'
+    id: 'AdaBind',
+    name: 'AdaBind',
+    description:
+      'Ligand-class-specific multimodal representations coupling ESM-2 embeddings with coordination and pocket descriptors',
+    year: 2026,
+    paper: 'https://huggingface.co/spaces/Quangg/Protein-Ligand-Binding'
   },
   {
     id: 'bindEmbed21DL',
     name: 'bindEmbed21DL',
-    description: 'Deep learning embedding-based binding site prediction',
+    description:
+      'Per-residue ProtT5 embeddings combined with a shallow convolutional network',
     year: 2021,
-    paper: 'https://doi.org/...'
+    paper: 'https://doi.org/10.1038/s41598-021-03431-4'
   },
   {
-    id: 'P2Rank',
-    name: 'P2Rank',
-    description: 'Machine learning based ligandability prediction',
-    year: 2018,
-    paper: 'https://doi.org/...'
+    id: 'bindNode24',
+    name: 'bindNode24',
+    description:
+      'Graph neural network incorporating structural proximity for binding-residue prediction',
+    year: 2025,
+    paper: 'https://doi.org/10.1016/j.csbj.2025.02.042'
   }
 ];

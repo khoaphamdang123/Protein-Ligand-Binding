@@ -31,19 +31,19 @@ export const routes: Routes = [
         title: 'BindSite Explorer - TestSet300'
       },
       {
-        path: 'benchmark/testset46',
+        path: 'benchmark/testsetnew46',
         loadComponent: () => import('./features/benchmark/benchmark-testset46/benchmark-testset46.component').then(m => m.BenchmarkTestset46Component),
-        title: 'BindSite Explorer - TestSet46'
+        title: 'BindSite Explorer - TestSetNew46'
       },
       {
-        path: 'compare',
-        loadComponent: () => import('./features/comparison/comparison.component').then(m => m.ComparisonComponent),
-        title: 'BindSite Explorer - Compare'
+        path: 'benchmark/curves',
+        loadComponent: () => import('./features/benchmark/benchmark-curves/benchmark-curves.component').then(m => m.BenchmarkCurvesComponent),
+        title: 'BindSite Explorer - ROC & PR Curves'
       },
       {
-        path: 'methods',
-        loadComponent: () => import('./features/methods/methods.component').then(m => m.MethodsComponent),
-        title: 'BindSite Explorer - Methods'
+        path: 'predict',
+        loadComponent: () => import('./features/predict/predict.component').then(m => m.PredictComponent),
+        title: 'BindSite Explorer - Predict'
       },
       {
         path: 'about',

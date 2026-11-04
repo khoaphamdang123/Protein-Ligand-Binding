@@ -1,147 +1,324 @@
-import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { ExplorerStateService } from '../../core/state/explorer.state';
-import { MockDataService } from '../../core/services/mock-data.service';
+import { Component, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import { CommonModule, DecimalPipe, PercentPipe } from '@angular/common';
+import { DatasetType } from '../../core/models/dataset.model';
 import { PredictionMethod } from '../../core/models/method.model';
-import { ProteinViewerComponent } from '../../molecular/protein-viewer/protein-viewer.component';
-import { SequenceViewerComponent } from '../../molecular/sequence-viewer/sequence-viewer.component';
+import { BINDING_TYPES, BindingType } from '../../core/models/prediction.model';
+import {
+  ExploreFilters,
+  ExploreProtein,
+  ExploreResult,
+} from '../../core/models/explore.model';
+import { ExploreDataService } from '../../core/services/explore-data.service';
+import {
+  LIGAND_CLASS_COLORS,
+  LOW_PLDDT,
+  PLDDT_BANDS,
+  STATUS_COLORS,
+  STATUS_LABELS,
+  probabilityGradientCss,
+} from '../../core/utils/prediction-colors';
+import {
+  FocusMode,
+  PredictionColorMode,
+  PredictionViewerComponent,
+} from '../../molecular/prediction-viewer/prediction-viewer.component';
+import { ProbabilityTrackComponent } from '../../molecular/probability-track/probability-track.component';
 
 @Component({
   selector: 'app-explorer',
   standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    ProteinViewerComponent,
-    SequenceViewerComponent
-  ],
+  imports: [CommonModule, DecimalPipe, PercentPipe, PredictionViewerComponent, ProbabilityTrackComponent],
   templateUrl: './explorer.component.html',
   styleUrl: './explorer.component.scss'
 })
 export class ExplorerComponent implements OnInit {
-  private explorerState = inject(ExplorerStateService);
-  private mockDataService = inject(MockDataService);
+  private exploreData = inject(ExploreDataService);
 
-  // Expose state signals
-  currentProtein = this.explorerState.currentProtein;
-  currentPrediction = this.explorerState.currentPrediction;
-  selectedResidue = this.explorerState.selectedResidue;
-  filters = this.explorerState.filters;
-  residues = this.explorerState.residues;
+  @ViewChild(PredictionViewerComponent) viewer?: PredictionViewerComponent;
 
-  // Available proteins for search
-  proteins = this.mockDataService.proteins;
-  
-  // Search and filter states
-  searchQuery = '';
-  showSearchResults = false;
-  filteredProteins = this.proteins();
+  proteins = this.exploreData.proteins;
 
-  // Dataset options
-  datasetOptions = [
+  readonly methods: PredictionMethod[] = ['AdaBind', 'bindEmbed21DL', 'bindNode24'];
+  readonly bindingTypes = BINDING_TYPES;
+  readonly plddtBands = PLDDT_BANDS;
+  readonly lowPlddt = LOW_PLDDT;
+  readonly statusColors = STATUS_COLORS;
+  readonly statusLabels = STATUS_LABELS;
+  readonly ligandClassColors = LIGAND_CLASS_COLORS;
+  readonly probabilityGradient = probabilityGradientCss();
+  readonly rainbowGradient = 'linear-gradient(90deg, #E53935, #FB8C00, #FDD835, #43A047, #00ACC1, #1E5AA8, #7E57C2)';
+  readonly colorModes: { value: PredictionColorMode; label: string }[] = [
+    { value: 'rainbow', label: 'Structure' },
+    { value: 'probability', label: 'Confidence' },
+    { value: 'plddt', label: 'pLDDT' },
+    { value: 'chain', label: 'Chain' },
+  ];
+
+  filters = signal<ExploreFilters>({
+    dataset: 'all',
+    method: 'AdaBind',
+    bindingType: 'all',
+    searchQuery: '',
+  });
+
+  currentIndex = signal(0);
+  result = signal<ExploreResult | null>(null);
+  selectedIndex = signal<number | null>(null);
+
+  // Viewer settings.
+  colorMode = signal<PredictionColorMode>('rainbow');
+  showGroundTruth = signal(true);
+  showPredicted = signal(true);
+  errorsOnly = signal(false);
+  exportScale = signal(2);
+
+  readonly datasetOptions: { value: ExploreFilters['dataset']; label: string }[] = [
     { value: 'all', label: 'All Datasets' },
-    { value: 'testset300', label: 'TestSet300' },
-    { value: 'testset46', label: 'TestSet46' }
+    { value: 'TestSet300', label: 'TestSet300 (300)' },
+    { value: 'TestSetNew46', label: 'TestSetNew46 (46)' },
   ];
 
-  // Method options
-  methodOptions = [
-    { value: 'ESM-ORION' as const, label: 'ESM-ORION' },
-    { value: 'BindNode24' as const, label: 'BindNode24' },
-    { value: 'bindEmbed21DL' as const, label: 'bindEmbed21DL' },
-    { value: 'P2Rank' as const, label: 'P2Rank' }
-  ];
-
-  // Get current method as PredictionMethod type
-  get currentMethod(): PredictionMethod {
-    const method = this.filters().method;
-    return method === 'all' ? 'ESM-ORION' : method;
-  }
-
-  // Binding type options
-  bindingTypeOptions = [
+  readonly bindingTypeOptions: { value: ExploreFilters['bindingType']; label: string }[] = [
     { value: 'all', label: 'All Types' },
-    { value: 'metal', label: 'Metal' },
-    { value: 'nucleic-acid', label: 'Nucleic Acid' },
-    { value: 'small-molecule', label: 'Small Molecule' },
-    { value: 'other', label: 'Other' }
+    { value: 'metal', label: 'Metal ion' },
+    { value: 'nuclear', label: 'Nucleic acid' },
+    { value: 'small', label: 'Small molecule' },
   ];
 
-  // Mock metrics
-  metrics = {
-    f1: 0.847,
-    mcc: 0.782,
-    precision: 0.891,
-    recall: 0.806
-  };
+  readonly filtered = computed<ExploreProtein[]>(() => {
+    const f = this.filters();
+    const q = f.searchQuery.trim().toLowerCase();
+    return this.proteins().filter(p => {
+      if (f.dataset !== 'all' && p.dataset !== f.dataset) return false;
+      if (f.bindingType !== 'all' && p.bindingType !== f.bindingType) return false;
+      if (q) {
+        const hay = `${p.id} ${p.uniprotId} ${p.pdbId} ${p.name}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  });
+
+  readonly currentProtein = computed<ExploreProtein | null>(() => {
+    const list = this.filtered();
+    const i = this.currentIndex();
+    return list[i] ?? null;
+  });
+
+  readonly total = computed(() => this.filtered().length);
+
+  readonly selectedResidue = computed(() => {
+    const r = this.result();
+    const i = this.selectedIndex();
+    if (!r || !i) return null;
+    const idx = i - 1;
+    return {
+      position: i,
+      aa: r.protein.sequence[idx],
+      probability: r.probability[idx],
+      plddt: r.plddt[idx],
+      predicted: r.binding[idx],
+      groundTruth: r.groundTruth[idx],
+      status: r.status[idx],
+    };
+  });
+
+  readonly summary = computed(() => {
+    const r = this.result();
+    if (!r) return null;
+    const p = r.plddt;
+    const sorted = [...p].sort((a, b) => a - b);
+    const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+    const mean = p.reduce((a, b) => a + b, 0) / p.length;
+    return {
+      meanPlddt: mean,
+      medianPlddt: median,
+      nBinding: r.groundTruth.filter(Boolean).length,
+      nPredicted: r.binding.filter(Boolean).length,
+      length: r.protein.length,
+    };
+  });
+
+  private pendingSelection: number | null = null;
 
   ngOnInit(): void {
-    // Load first protein by default
-    const firstProtein = this.proteins()[0];
-    if (firstProtein) {
-      this.loadProtein(firstProtein.id);
+    this.restoreFromQuery();
+    this.reloadResult();
+  }
+
+  private restoreFromQuery(): void {
+    const params = new URLSearchParams(window.location.search);
+    const method = params.get('method');
+    const type = params.get('type');
+    const dataset = params.get('dataset');
+    const color = params.get('color');
+    if (method && (this.methods as string[]).includes(method)) {
+      this.filters.update(f => ({ ...f, method: method as PredictionMethod }));
+    }
+    if (type && (this.bindingTypes.map(t => t.value) as string[]).includes(type)) {
+      this.filters.update(f => ({ ...f, bindingType: type as BindingType }));
+    }
+    if (dataset === 'TestSet300' || dataset === 'TestSetNew46' || dataset === 'all') {
+      this.filters.update(f => ({ ...f, dataset }));
+    }
+    if (color === 'rainbow' || color === 'probability' || color === 'plddt' || color === 'chain') {
+      this.colorMode.set(color as PredictionColorMode);
+    }
+    const proteinId = params.get('protein');
+    if (proteinId) {
+      const idx = this.filtered().findIndex(p => p.id === proteinId);
+      if (idx >= 0) {
+        this.currentIndex.set(idx);
+        const res = Number(params.get('res'));
+        if (Number.isInteger(res) && res > 0) this.pendingSelection = res;
+        return;
+      }
     }
   }
 
-  onSearchInput(query: string): void {
-    this.searchQuery = query;
-    this.showSearchResults = query.length > 0;
-    
-    if (query.length > 0) {
-      const lowerQuery = query.toLowerCase();
-      this.filteredProteins = this.proteins().filter(p =>
-        p.id.toLowerCase().includes(lowerQuery) ||
-        p.name.toLowerCase().includes(lowerQuery) ||
-        p.pdbId.toLowerCase().includes(lowerQuery)
-      );
-    } else {
-      this.filteredProteins = this.proteins();
+  private reloadResult(): void {
+    const protein = this.currentProtein();
+    if (!protein) {
+      this.result.set(null);
+      return;
     }
+    this.result.set(this.exploreData.getResult(protein, this.filters().method));
+    const sel = this.pendingSelection;
+    this.pendingSelection = null;
+    this.selectedIndex.set(sel && sel <= protein.length ? sel : null);
   }
 
-  selectProtein(proteinId: string): void {
-    this.loadProtein(proteinId);
-    this.searchQuery = '';
-    this.showSearchResults = false;
+  // ---- Filters & navigation ----
+
+  onSearch(event: Event): void {
+    const q = (event.target as HTMLInputElement).value;
+    this.filters.update(f => ({ ...f, searchQuery: q }));
+    this.currentIndex.set(0);
+    this.reloadResult();
   }
 
-  loadProtein(proteinId: string): void {
-    const protein = this.proteins().find(p => p.id === proteinId);
-    if (protein) {
-      this.explorerState.setCurrentProtein(protein);
-      
-      // Load prediction for current method
-      const method = this.filters().method;
-      const predictions = this.mockDataService.getPredictions();
-      const prediction = predictions.find(
-        (p: any) => p.proteinId === proteinId && p.method === method
-      );
-      this.explorerState.setCurrentPrediction(prediction || null);
-    }
+  clearSearch(): void {
+    this.filters.update(f => ({ ...f, searchQuery: '' }));
+    this.currentIndex.set(0);
+    this.reloadResult();
   }
 
-  onFilterChange(): void {
-    const filters = this.filters();
-    this.explorerState.updateFilters(filters);
-    
-    // Reload prediction with new method
-    const currentProtein = this.currentProtein();
-    if (currentProtein) {
-      const predictions = this.mockDataService.getPredictions();
-      const prediction = predictions.find(
-        (p: any) => p.proteinId === currentProtein.id && p.method === filters.method
-      );
-      this.explorerState.setCurrentPrediction(prediction || null);
-    }
+  onDatasetChange(event: Event): void {
+    const dataset = (event.target as HTMLSelectElement).value as DatasetType | 'all';
+    this.filters.update(f => ({ ...f, dataset }));
+    this.currentIndex.set(0);
+    this.reloadResult();
+  }
+
+  onMethodChange(event: Event): void {
+    const method = (event.target as HTMLSelectElement).value as PredictionMethod;
+    this.filters.update(f => ({ ...f, method }));
+    this.reloadResult();
+  }
+
+  onBindingTypeChange(event: Event): void {
+    const bindingType = (event.target as HTMLSelectElement).value as BindingType | 'all';
+    this.filters.update(f => ({ ...f, bindingType }));
+    this.currentIndex.set(0);
+    this.reloadResult();
   }
 
   resetFilters(): void {
-    this.explorerState.resetFilters();
-    this.onFilterChange();
+    this.filters.set({ dataset: 'all', method: this.filters().method, bindingType: 'all', searchQuery: '' });
+    this.currentIndex.set(0);
+    this.reloadResult();
   }
 
-  onResidueSelect(position: number): void {
-    this.explorerState.selectResidueByPosition(position);
+  onSelectProtein(event: Event): void {
+    const id = (event.target as HTMLSelectElement).value;
+    const idx = this.filtered().findIndex(p => p.id === id);
+    if (idx >= 0) {
+      this.currentIndex.set(idx);
+      this.reloadResult();
+    }
+  }
+
+  goTo(index: number): void {
+    const max = this.total() - 1;
+    const clamped = Math.max(0, Math.min(max, index));
+    if (clamped === this.currentIndex()) return;
+    this.currentIndex.set(clamped);
+    this.reloadResult();
+  }
+
+  prev(): void {
+    this.goTo(this.currentIndex() - 1);
+  }
+
+  next(): void {
+    this.goTo(this.currentIndex() + 1);
+  }
+
+  // ---- Residue sync (3D <-> sequence) ----
+
+  onResidueSelect(index: number): void {
+    this.selectedIndex.set(this.selectedIndex() === index ? null : index);
+  }
+
+  onResidueHover(index: number | null): void {
+    // Reserved for future sequence-hover highlighting; the 3D tooltip already shows detail.
+  }
+
+  // ---- Viewer actions ----
+
+  focusPocket(mode: FocusMode): void {
+    this.viewer?.focusPocket(mode);
+  }
+
+  async exportPng(scale: number): Promise<void> {
+    const protein = this.currentProtein();
+    if (!protein) return;
+    await this.viewer?.exportPng(scale, `${protein.pdbId}_${this.filters().method}_${this.colorMode()}`);
+  }
+
+  setExportScale(event: Event): void {
+    const v = Number((event.target as HTMLSelectElement).value);
+    if ([1, 2, 4].includes(v)) this.exportScale.set(v);
+  }
+
+  downloadPdb(): void {
+    const r = this.result();
+    const protein = this.currentProtein();
+    if (!r || !protein) return;
+    const url = URL.createObjectURL(new Blob([r.pdb], { type: 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${protein.pdbId}_${protein.id}.pdb`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  copyShareLink(): void {
+    const protein = this.currentProtein();
+    if (!protein) return;
+    const params = new URLSearchParams();
+    params.set('protein', protein.id);
+    params.set('method', this.filters().method);
+    params.set('color', this.colorMode());
+    const res = this.selectedIndex();
+    if (res) params.set('res', String(res));
+    const url = `${location.origin}${location.pathname}?${params.toString()}`;
+    navigator.clipboard?.writeText(url).then(
+      () => this.flashCopied(),
+      () => { /* clipboard unavailable */ }
+    );
+  }
+
+  private copied = signal(false);
+  private flashCopied(): void {
+    this.copied.set(true);
+    setTimeout(() => this.copied.set(false), 1500);
+  }
+  readonly justCopied = this.copied.asReadonly();
+
+  // ---- Display helpers ----
+
+  ligandClassLabel(type: BindingType): string {
+    return this.bindingTypes.find(t => t.value === type)?.label ?? type;
   }
 }

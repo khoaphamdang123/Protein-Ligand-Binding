@@ -4,6 +4,13 @@ import { CommonModule } from '@angular/common';
 type MethodCategory = 'protein-language-model' | 'geometry-based' | 'deep-learning' | 'machine-learning';
 type BindingSiteTask = 'binding-site-prediction' | 'pocket-detection' | 'ligandability-prediction';
 
+interface MethodMetrics {
+  f1: number;
+  mcc: number;
+  precision: number;
+  recall: number;
+}
+
 interface MethodInfo {
   id: string;
   name: string;
@@ -26,8 +33,9 @@ interface MethodInfo {
     format: string;
   };
   metrics: {
-    testset300: { f1: number; mcc: number; precision: number; recall: number };
-    testset46: { f1: number; mcc: number; precision: number; recall: number };
+    testset300: MethodMetrics;
+    testsetnew46?: MethodMetrics;
+    testsetnew46Label?: string;
   };
   references: { title: string; url: string }[];
   color: string;
@@ -44,93 +52,62 @@ interface MethodInfo {
 export class MethodsComponent {
   // Selected method for detail view
   selectedMethod = signal<MethodInfo | null>(null);
-  
+
   // Search and filter
   searchQuery = signal('');
   selectedCategory = signal<MethodCategory | 'all'>('all');
 
-  // Methods data
+  // Methods data (from the AdaBind paper, 2026)
   methods: MethodInfo[] = [
     {
-      id: 'esm-orion',
-      name: 'ESM-ORION',
-      shortName: 'ESM-ORION',
+      id: 'ada-bind',
+      name: 'AdaBind',
+      shortName: 'AdaBind',
       category: 'protein-language-model',
       categoryLabel: 'Protein Language Model',
       task: 'binding-site-prediction',
-      taskLabel: 'Binding Site Prediction',
-      description: 'A transformer-based protein language model approach for binding site prediction using evolutionary scale modeling.',
-      overview: `ESM-ORION leverages the power of large protein language models trained on evolutionary sequences to identify binding sites. The model utilizes attention mechanisms to capture residue-residue relationships across the entire protein structure.
+      taskLabel: 'Ligand-Class Binding Site Prediction',
+      description:
+        'Ligand-class-specific multimodal representations that couple ESM-2 embeddings with coordination, patch and pocket descriptors, with separate predictors for metal, nucleic-acid and small-molecule binding.',
+      overview: `AdaBind predicts ligand-binding residues by coupling protein language model (ESM-2) embeddings with multimodal, ligand-class-specific representations. It trains three separate predictors for metal ions, nucleic acids and small molecules, because each ligand class imposes distinct chemical and spatial constraints.
 
-This approach represents a paradigm shift in computational biology, moving from traditional feature engineering to learned representations that capture complex patterns in protein sequences.`,
-      architecture: `The architecture consists of:
-• ESM-2 protein language model backbone (650M parameters)
-• Evolutionary representation learning
-• Binding site prediction head
-• Attention-based residue importance scoring
+Metal coordination relies on donor chemistry (Cys/His/Asp/Glu) and coordination-compatible environments. Nucleic-acid recognition is mediated by cationic Arg/Lys surface patches. Small-molecule binding is framed as candidate pocket neighborhoods. On homology-filtered benchmarks (<20% sequence identity), AdaBind reaches metal-binding F1 of 45.8% on TestSet300 and 70.7% on the external TestSetNew46, with competitive small-molecule performance.`,
+      architecture: `ESM-2 backbone (esm2_t33_650M_UR50D, 1,280-dim per-residue embeddings averaged over the last two layers) + ESMFold-predicted structures.
 
-[Architecture diagram placeholder - pending real diagram]`,
+Three ligand-class branches (final selected residue blocks):
+• Metal — ESM1280 + ATOM15 + CHEM24 + MULTI2 (1,377 dims)
+• Nucleic acid — ESM1280 + ACCESS10 + NA_PATCH3D40 + NA_TOPO12 (1,342 dims)
+• Small molecule — ESM1280 + ACCESS10 + SM_POCKET3D44 + SM_TOPO16 (1,350 dims)
+
+The nucleic-acid and small-molecule encoders use six-head modality self-attention and hypergraph message passing over candidate patches/pockets (V1 + multiscale ensembles: 0.70/0.30 for nucleic acid, 0.60/0.40 for small molecule).
+
+Locked out-of-fold decision thresholds: metal 0.9389, nucleic-acid 0.7357, small-molecule 0.5133.`,
       input: {
-        title: 'Protein Sequences',
-        description: 'Amino acid sequences in FASTA format or PDB structures for structure-aware predictions.',
-        formats: ['FASTA', 'PDB', 'mmCIF']
+        title: 'Protein sequences + predicted structures',
+        description:
+          'Amino-acid sequences (FASTA) and ESMFold-predicted structures. No query ligand or experimentally solved structure is required.',
+        formats: ['FASTA', 'PDB (ESMFold)', 'mmCIF']
       },
       output: {
-        title: 'Binding Site Predictions',
-        description: 'Per-residue binding probability scores and predicted binding site regions.',
-        format: 'JSON / CSV / PyMOL script'
+        title: 'Per-residue binding scores',
+        description:
+          'Per-residue binding probability scores for metal, nucleic-acid and small-molecule binding, with thresholded predictions and confusion-matrix status.',
+        format: 'JSON / CSV / per-residue scores'
       },
       metrics: {
-        testset300: { f1: 0.847, mcc: 0.782, precision: 0.891, recall: 0.806 },
-        testset46: { f1: 0.823, mcc: 0.756, precision: 0.865, recall: 0.785 }
+        testset300: { f1: 0.4611, mcc: 0.4127, precision: 0.470, recall: 0.453 },
+        testsetnew46: { f1: 0.7068, mcc: 0.7128, precision: 0.68, recall: 0.736 },
+        testsetnew46Label: 'Metal-binding (external)'
       },
       references: [
-        { title: 'Original Paper (arXiv:2023)', url: '#' },
-        { title: 'GitHub Repository', url: '#' },
-        { title: 'Model Checkpoints', url: '#' }
+        {
+          title: 'AdaBind: Ligand-class-specific multimodal representations improve protein binding residue prediction (2026)',
+          url: '#'
+        },
+        { title: 'BindSite Explorer (Hugging Face Space)', url: 'https://huggingface.co/spaces/Quangg/Protein-Ligand-Binding' }
       ],
       color: '#22D3EE',
       icon: 'transformer'
-    },
-    {
-      id: 'bindnode24',
-      name: 'BindNode24',
-      shortName: 'BindNode24',
-      category: 'deep-learning',
-      categoryLabel: 'Deep Learning',
-      task: 'binding-site-prediction',
-      taskLabel: 'Binding Site Prediction',
-      description: 'A graph neural network approach for protein binding site prediction using node-level features.',
-      overview: `BindNode24 employs graph neural networks to model protein structures as graphs, where nodes represent residues and edges capture spatial relationships. The model learns to identify binding sites through graph convolution operations.
-
-This approach leverages the power of graph-based representations to capture both local and global structural patterns that are critical for binding site identification.`,
-      architecture: `The architecture consists of:
-• Graph construction from protein structure
-• Multi-layer graph convolutional network
-• Node feature aggregation
-• Binding site classification head
-
-[Architecture diagram placeholder - pending real diagram]`,
-      input: {
-        title: 'Protein Structures',
-        description: 'Three-dimensional protein structures for graph construction.',
-        formats: ['PDB', 'mmCIF']
-      },
-      output: {
-        title: 'Binding Site Predictions',
-        description: 'Per-residue binding probability scores and predicted binding site regions.',
-        format: 'JSON / CSV / PyMOL script'
-      },
-      metrics: {
-        testset300: { f1: 0.723, mcc: 0.658, precision: 0.756, recall: 0.692 },
-        testset46: { f1: 0.698, mcc: 0.625, precision: 0.732, recall: 0.667 }
-      },
-      references: [
-        { title: 'BindNode24 Paper (2024)', url: '#' },
-        { title: 'GitHub Repository', url: '#' }
-      ],
-      color: '#38BDF8',
-      icon: 'geometry'
     },
     {
       id: 'bindembed21dl',
@@ -140,101 +117,97 @@ This approach leverages the power of graph-based representations to capture both
       categoryLabel: 'Deep Learning',
       task: 'binding-site-prediction',
       taskLabel: 'Binding Site Prediction',
-      description: 'A deep learning approach using embedding representations for binding site prediction.',
-      overview: `bindEmbed21DL uses learned embeddings to represent protein residues in a high-dimensional space where binding and non-binding residues are separable. The model combines sequence and structural embeddings for accurate predictions.
+      description:
+        'Per-residue ProtT5 embeddings combined with a shallow convolutional network to predict binding residues across metal, nucleic-acid and small-molecule classes.',
+      overview: `bindEmbed21DL showed that per-residue embeddings from the ProtT5 protein language model, combined with a shallow convolutional network, can predict binding residues across three ligand classes. It established sequence embeddings as a competitive default representation for binding-residue prediction.
 
-This method demonstrates the effectiveness of representation learning in capturing complex patterns that distinguish binding sites from other protein regions.`,
-      architecture: `The network architecture includes:
-• Protein sequence and structure encoding
-• Multi-scale embedding layers
-• Feature fusion network
-• Binary classification head
-
-[Network architecture diagram placeholder - pending real diagram]`,
+On the AdaBind benchmark (any-ligand, TestSet300), bindEmbed21DL achieves a residue-global F1 of 43.0% and MCC of 41.0%.`,
+      architecture: `• ProtT5 per-residue embeddings
+• Shallow convolutional network
+• Residue-level binary classification across metal, nucleic-acid and small-molecule labels`,
       input: {
-        title: 'Protein Sequences and Structures',
-        description: 'Amino acid sequences and structural information for embedding generation.',
-        formats: ['FASTA', 'PDB', 'mmCIF']
+        title: 'Protein sequences',
+        description: 'Amino-acid sequences processed into ProtT5 per-residue embeddings.',
+        formats: ['FASTA']
       },
       output: {
-        title: 'Binding Site Predictions',
-        description: 'Residue-level predictions with confidence scores.',
-        format: 'JSON / CSV / PyMOL script'
+        title: 'Binding site predictions',
+        description: 'Per-residue binding probability scores and predicted binding regions.',
+        format: 'JSON / CSV'
       },
       metrics: {
-        testset300: { f1: 0.801, mcc: 0.734, precision: 0.823, recall: 0.780 },
-        testset46: { f1: 0.779, mcc: 0.708, precision: 0.801, recall: 0.758 }
+        testset300: { f1: 0.43, mcc: 0.41, precision: 0.45, recall: 0.412 }
       },
       references: [
-        { title: 'bindEmbed21DL Paper (2021)', url: '#' },
-        { title: 'GitHub Repository', url: '#' }
+        {
+          title: 'Protein embeddings and deep learning predict binding residues for various ligand classes (Sci Rep 2021)',
+          url: 'https://doi.org/10.1038/s41598-021-03431-4'
+        }
       ],
       color: '#10B981',
       icon: 'neural'
     },
     {
-      id: 'p2rank',
-      name: 'P2Rank',
-      shortName: 'P2Rank',
-      category: 'machine-learning',
-      categoryLabel: 'Machine Learning',
-      task: 'ligandability-prediction',
-      taskLabel: 'Ligandability Prediction',
-      description: 'A machine learning-based method for predicting ligand-binding sites using random forest classifiers.',
-      overview: `P2Rank is a machine learning approach that predicts binding sites by analyzing physico-chemical properties of surface points. It uses a Random Forest classifier trained on engineered features derived from local surface geometry.
+      id: 'bindnode24',
+      name: 'bindNode24',
+      shortName: 'bindNode24',
+      category: 'geometry-based',
+      categoryLabel: 'Geometry-Based',
+      task: 'binding-site-prediction',
+      taskLabel: 'Binding Site Prediction',
+      description:
+        'A graph neural network that incorporates structural proximity for competitive binding-residue prediction with a substantially smaller model.',
+      overview: `bindNode24 extends sequence-embedding approaches by incorporating structural proximity through a graph neural network, achieving competitive accuracy with a substantially smaller model (~60% smaller).
 
-The method has shown strong performance in ligandability predictions and is widely used in drug discovery workflows.`,
-      architecture: `The system architecture:
-• Surface point sampling
-• Feature extraction (geometric + chemical)
-• Random Forest classifier
-• Consensus scoring
-
-[System architecture placeholder - pending real diagram]`,
+On the AdaBind benchmark (any-ligand, TestSet300), bindNode24 achieves a residue-global F1 of 44.0% and MCC of 42.0%.`,
+      architecture: `• Residue graph construction from protein structure
+• Graph neural network encoding spatial context
+• Binding-residue classification head`,
       input: {
-        title: 'Protein Structures',
-        description: 'Protein structures for surface analysis and feature computation.',
+        title: 'Protein sequences and structures',
+        description: 'Amino-acid sequences with structural proximity encoded as residue graphs.',
         formats: ['PDB', 'mmCIF']
       },
       output: {
-        title: 'Ranked Predictions',
-        description: 'Ranked list of predicted binding sites with confidence scores.',
-        format: 'CSV / JSON / Pymol script'
+        title: 'Binding site predictions',
+        description: 'Per-residue binding probability scores and predicted binding residues.',
+        format: 'JSON / CSV'
       },
       metrics: {
-        testset300: { f1: 0.778, mcc: 0.701, precision: 0.795, recall: 0.762 },
-        testset46: { f1: 0.752, mcc: 0.678, precision: 0.771, recall: 0.734 }
+        testset300: { f1: 0.44, mcc: 0.42, precision: 0.46, recall: 0.422 }
       },
       references: [
-        { title: 'P2Rank Paper (Bioinformatics 2018)', url: '#' },
-        { title: 'GitHub Repository', url: '#' },
-        { title: 'Web Server', url: '#' }
+        {
+          title: 'bindNode24: Competitive binding residue prediction with 60% smaller model (CSBJ 2025)',
+          url: 'https://doi.org/10.1016/j.csbj.2025.02.042'
+        }
       ],
-      color: '#F97316',
-      icon: 'ml'
+      color: '#38BDF8',
+      icon: 'geometry'
     }
   ];
 
   // Computed: filtered methods
   filteredMethods = computed(() => {
     let filtered = this.methods;
-    
+
     // Search filter
     const query = this.searchQuery().toLowerCase();
     if (query) {
-      filtered = filtered.filter(m => 
-        m.name.toLowerCase().includes(query) ||
-        m.description.toLowerCase().includes(query) ||
-        m.categoryLabel.toLowerCase().includes(query)
+      filtered = filtered.filter(
+        (m) =>
+          m.name.toLowerCase().includes(query) ||
+          m.description.toLowerCase().includes(query) ||
+          m.categoryLabel.toLowerCase().includes(query)
       );
     }
-    
+
     // Category filter
     const category = this.selectedCategory();
     if (category !== 'all') {
-      filtered = filtered.filter(m => m.category === category);
+      filtered = filtered.filter((m) => m.category === category);
     }
-    
+
     return filtered;
   });
 
@@ -243,8 +216,7 @@ The method has shown strong performance in ligandability predictions and is wide
     { value: 'all', label: 'All Categories' },
     { value: 'protein-language-model', label: 'Protein Language Model' },
     { value: 'geometry-based', label: 'Geometry-Based' },
-    { value: 'deep-learning', label: 'Deep Learning' },
-    { value: 'machine-learning', label: 'Machine Learning' }
+    { value: 'deep-learning', label: 'Deep Learning' }
   ];
 
   // Open method detail

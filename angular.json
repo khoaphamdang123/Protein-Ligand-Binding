@@ -3,7 +3,10 @@
   "version": 1,
   "cli": {
     "packageManager": "npm",
-    "analytics": "c842d325-6668-4dd7-97f5-fe09ed1ddf79"
+    "analytics": "c842d325-6668-4dd7-97f5-fe09ed1ddf79",
+    "cache": {
+      "enabled": false
+    }
   },
   "newProjectRoot": "projects",
   "projects": {
@@ -58,6 +61,11 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "prebundle": false,
+            "host": "127.0.0.1",
+            "proxyConfig": "proxy.conf.json"
+          },
           "configurations": {
             "production": {
               "buildTarget": "bindsite-explorer:build:production"

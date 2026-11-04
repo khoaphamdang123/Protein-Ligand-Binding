@@ -215,11 +215,6 @@ export class SidebarComponent {
       badge: 'New'
     },
     {
-      icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M5.64 5.64l4.24 4.24M14.12 14.12l4.24 4.24M1 12h6M17 12h6"/></svg>',
-      label: 'Methods',
-      route: '/methods'
-    },
-    {
       icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
       label: 'About',
       route: '/about'

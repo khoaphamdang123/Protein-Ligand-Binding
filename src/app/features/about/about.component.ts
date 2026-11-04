@@ -16,8 +16,9 @@ import { CommonModule } from '@angular/common';
         <section class="about-section">
           <h2>Project Overview</h2>
           <p>
-            BindSite Explorer is a frontend visualization platform for binding site prediction methods
-            benchmarking on TestSet300 and TestSet46 datasets using ESM-ORION and other methods.
+            BindSite Explorer is the interactive visualization platform accompanying the AdaBind paper,
+            benchmarking ligand-class-specific binding-residue prediction on TestSet300 and TestSetNew46
+            against bindEmbed21DL and bindNode24.
           </p>
         </section>
 
@@ -55,7 +56,7 @@ import { CommonModule } from '@angular/common';
           <h2>Future Development</h2>
           <ul class="future-list">
             <li>Backend integration with FastAPI</li>
-            <li>ESM-ORION real-time inference</li>
+            <li>AdaBind multimodal inference (ESM-2 + ESMFold descriptors)</li>
             <li>3D protein structure visualization</li>
             <li>User authentication system</li>
             <li>Data export and reporting</li>

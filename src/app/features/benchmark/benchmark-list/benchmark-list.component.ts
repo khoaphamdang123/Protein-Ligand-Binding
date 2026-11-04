@@ -15,39 +15,33 @@ export class BenchmarkListComponent implements OnInit {
   private mockDataService = inject(MockDataService);
 
   testset300: Dataset | null = null;
-  testset46: Dataset | null = null;
+  testsetnew46: Dataset | null = null;
 
   methods = [
     { 
-      id: 'ESM-ORION', 
-      name: 'ESM-ORION', 
+      id: 'AdaBind', 
+      name: 'AdaBind', 
       color: '#22D3EE', 
-      description: 'Transformer-based protein language model for binding site prediction' 
-    },
-    { 
-      id: 'BindNode24', 
-      name: 'BindNode24', 
-      color: '#38BDF8', 
-      description: 'Graph neural network approach for binding site prediction' 
+      description: 'Ligand-class-specific multimodal representations (ESM-2 + coordination/pocket descriptors)' 
     },
     { 
       id: 'bindEmbed21DL', 
       name: 'bindEmbed21DL', 
       color: '#10B981', 
-      description: 'Deep learning embedding-based binding site prediction' 
+      description: 'ProtT5 embeddings with a shallow convolutional network' 
     },
     { 
-      id: 'P2Rank', 
-      name: 'P2Rank', 
-      color: '#F97316', 
-      description: 'Machine learning based ligandability prediction' 
+      id: 'bindNode24', 
+      name: 'bindNode24', 
+      color: '#38BDF8', 
+      description: 'Graph neural network incorporating structural proximity' 
     }
   ];
 
   ngOnInit(): void {
     this.mockDataService.getDatasets().subscribe(datasets => {
       this.testset300 = datasets.find(d => d.id === 'testset300') || null;
-      this.testset46 = datasets.find(d => d.id === 'testset46') || null;
+      this.testsetnew46 = datasets.find(d => d.id === 'testsetnew46') || null;
     });
   }
 }

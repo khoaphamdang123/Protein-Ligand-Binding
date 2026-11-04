@@ -55,6 +55,16 @@ export class ProteinStructureService {
       { position: 112, chainId: 'A', aminoAcid: 'GLU', residueNumber: 112, 
         groundTruth: true, predicted: true, confidence: 0.95, status: 'TP' },
       
+      // True Negatives
+      { position: 10, chainId: 'A', aminoAcid: 'ALA', residueNumber: 10, 
+        groundTruth: false, predicted: false, confidence: 0.15, status: 'TN' },
+      { position: 25, chainId: 'A', aminoAcid: 'GLY', residueNumber: 25, 
+        groundTruth: false, predicted: false, confidence: 0.22, status: 'TN' },
+      { position: 67, chainId: 'A', aminoAcid: 'PRO', residueNumber: 67, 
+        groundTruth: false, predicted: false, confidence: 0.18, status: 'TN' },
+      { position: 95, chainId: 'A', aminoAcid: 'SER', residueNumber: 95, 
+        groundTruth: false, predicted: false, confidence: 0.28, status: 'TN' },
+      
       // False Positives
       { position: 55, chainId: 'A', aminoAcid: 'LEU', residueNumber: 55, 
         groundTruth: false, predicted: true, confidence: 0.72, status: 'FP' },

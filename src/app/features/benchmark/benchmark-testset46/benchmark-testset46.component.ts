@@ -15,8 +15,8 @@ interface ProteinTableRow {
   name: string;
   length: number;
   bindingResidues: number;
-  esmOrionF1: number;
-  esmOrionMCC: number;
+  adaBindF1: number;
+  adaBindMcc: number;
   bindingType: string;
 }
 
@@ -43,7 +43,7 @@ export class BenchmarkTestset46Component implements OnInit, AfterViewInit {
   // Filters
   searchQuery = signal('');
   selectedBindingType = signal<string>('all');
-  selectedMethod = signal<PredictionMethod>('ESM-ORION');
+  selectedMethod = signal<PredictionMethod>('AdaBind');
   lengthRange = signal<string>('all');
 
   // Table columns
@@ -72,20 +72,20 @@ export class BenchmarkTestset46Component implements OnInit, AfterViewInit {
       render: (row) => `<span class="mono-value">${row.bindingResidues}</span>`
     },
     {
-      key: 'esmOrionF1',
-      label: 'ESM-ORION F1',
+      key: 'adaBindF1',
+      label: 'AdaBind F1',
       sortable: true,
       width: '140px',
       align: 'right',
-      render: (row) => `<span class="metric-value">${row.esmOrionF1.toFixed(3)}</span>`
+      render: (row) => `<span class="metric-value">${row.adaBindF1.toFixed(3)}</span>`
     },
     {
-      key: 'esmOrionMCC',
-      label: 'ESM-ORION MCC',
+      key: 'adaBindMcc',
+      label: 'AdaBind MCC',
       sortable: true,
       width: '140px',
       align: 'right',
-      render: (row) => `<span class="metric-value">${row.esmOrionMCC.toFixed(3)}</span>`
+      render: (row) => `<span class="metric-value">${row.adaBindMcc.toFixed(3)}</span>`
     },
     {
       key: 'bindingType',
@@ -120,12 +120,12 @@ export class BenchmarkTestset46Component implements OnInit, AfterViewInit {
       total: proteins.length,
       avgLength: Math.round(proteins.reduce((sum, p) => sum + p.length, 0) / proteins.length),
       totalBindingResidues: proteins.reduce((sum, p) => sum + (p.length * 0.09), 0),
-      avgF1: 0.823
+      avgF1: 0.7068
     };
   });
 
   ngOnInit(): void {
-    this.mockDataService.getProteinsByDataset('testset46').subscribe(proteins => {
+    this.mockDataService.getProteinsByDataset('testsetnew46').subscribe(proteins => {
       this.proteins.set(proteins);
     });
   }
@@ -173,8 +173,8 @@ export class BenchmarkTestset46Component implements OnInit, AfterViewInit {
       name: p.name,
       length: p.length,
       bindingResidues: Math.round(p.length * 0.09),
-      esmOrionF1: 0.72 + Math.random() * 0.22,
-      esmOrionMCC: 0.68 + Math.random() * 0.22,
+      adaBindF1: 0.36 + Math.random() * 0.18,
+      adaBindMcc: 0.32 + Math.random() * 0.18,
       bindingType: ['Metal', 'Nucleic Acid', 'Small Molecule'][Math.floor(Math.random() * 3)]
     }));
   }

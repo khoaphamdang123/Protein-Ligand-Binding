@@ -37,6 +37,44 @@
           }
         }
       }
+    },
+    {
+      "label": "backend: start",
+      "type": "shell",
+      "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "uvicorn", "app.main:create_app", "--factory", "--host", "127.0.0.1", "--port", "8000", "--http", "h11"],
+      "options": { "cwd": "${workspaceFolder}\\backend" },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "python",
+        "pattern": { "regexp": "^(ERROR)\\s+(.*)$", "severity": 1, "message": 2 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Started server process|Will watch for changes",
+          "endsPattern": "Application startup complete|Uvicorn running on"
+        }
+      }
+    },
+    {
+      "label": "dev: backend + frontend",
+      "dependsOn": ["backend: start", "npm: start"],
+      "problemMatcher": []
+    },
+    {
+      "label": "backend: test",
+      "type": "shell",
+      "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "pytest", "-q"],
+      "options": { "cwd": "${workspaceFolder}\\backend" },
+      "problemMatcher": []
+    },
+    {
+      "label": "backend: check environment (loads all models)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe",
+      "args": ["scripts\\check_environment.py"],
+      "options": { "cwd": "${workspaceFolder}\\backend" },
+      "problemMatcher": []
     }
   ]
 }

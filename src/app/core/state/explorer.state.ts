@@ -22,7 +22,7 @@ export class ExplorerStateService {
   // Filters
   private _filters = signal<ExplorerFilters>({
     dataset: 'all',
-    method: 'ESM-ORION',
+    method: 'AdaBind',
     bindingType: 'all',
     searchQuery: ''
   });
@@ -97,7 +97,7 @@ export class ExplorerStateService {
   resetFilters(): void {
     this._filters.set({
       dataset: 'all',
-      method: 'ESM-ORION',
+      method: 'AdaBind',
       bindingType: 'all',
       searchQuery: ''
     });

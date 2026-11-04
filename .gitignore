@@ -11,6 +11,18 @@
 npm-debug.log
 yarn-error.log
 
+# Model files (6+ GB, not for git)
+/model_weights
+/final_models
+
+# Backend (Python)
+/backend/.venv
+/backend/.venv-esmif
+/backend/cache
+/backend/logs
+__pycache__/
+.pytest_cache/
+
 # IDEs and editors
 .idea/
 .project

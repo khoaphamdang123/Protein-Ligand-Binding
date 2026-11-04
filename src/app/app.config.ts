@@ -1,4 +1,4 @@
-import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
+import { ApplicationConfig, ErrorHandler, inject, provideAppInitializer, provideZoneChangeDetection } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideAnimations } from '@angular/platform-browser/animations';
@@ -7,6 +7,7 @@ import * as echarts from 'echarts/core';
 import { BarChart, LineChart, RadarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent, TitleComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
+import { ErrorReporterService, GlobalErrorHandler } from './core/services/error-reporter.service';
 
 echarts.use([BarChart, LineChart, RadarChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent, CanvasRenderer]);
 
@@ -19,5 +20,8 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(),
     provideAnimations(),
     provideEchartsCore({ echarts }),
+    // Every uncaught UI error is shown in the console and sent to the backend log.
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
+    provideAppInitializer(() => inject(ErrorReporterService).installWindowListeners()),
   ]
 };

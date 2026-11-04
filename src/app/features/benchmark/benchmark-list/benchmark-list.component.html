@@ -46,9 +46,9 @@
       </a>
     }
 
-    <!-- TestSet46 Card -->
-    @if (testset46) {
-      <a routerLink="/benchmark/testset46" class="benchmark-card">
+    <!-- TestSetNew46 Card -->
+    @if (testsetnew46) {
+      <a routerLink="/benchmark/testsetnew46" class="benchmark-card">
         <div class="card-icon secondary">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -56,30 +56,30 @@
             <path d="M2 12l10 5 10-5"/>
           </svg>
         </div>
-        <h2>{{ testset46.name }}</h2>
-        <p class="card-description">{{ testset46.description }}</p>
+        <h2>{{ testsetnew46.name }}</h2>
+        <p class="card-description">{{ testsetnew46.description }}</p>
         
         <div class="stats-grid">
           <div class="stat-item">
             <div class="stat-label">Proteins</div>
-            <div class="stat-value">{{ testset46.proteinCount }}</div>
+            <div class="stat-value">{{ testsetnew46.proteinCount }}</div>
           </div>
           <div class="stat-item">
             <div class="stat-label">Binding Residues</div>
-            <div class="stat-value">{{ testset46.totalBindingResidues }}</div>
+            <div class="stat-value">{{ testsetnew46.totalBindingResidues }}</div>
           </div>
           <div class="stat-item">
             <div class="stat-label">Avg Length</div>
-            <div class="stat-value">{{ testset46.averageSequenceLength }}</div>
+            <div class="stat-value">{{ testsetnew46.averageSequenceLength }}</div>
           </div>
           <div class="stat-item">
             <div class="stat-label">Methods</div>
-            <div class="stat-value">{{ testset46.evaluatedMethods }}</div>
+            <div class="stat-value">{{ testsetnew46.evaluatedMethods }}</div>
           </div>
         </div>
 
         <div class="card-footer">
-          <span class="badge secondary">Validation Set</span>
+          <span class="badge secondary">External Validation Set</span>
           <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
@@ -91,7 +91,7 @@
   <!-- Methods Overview -->
   <section class="methods-overview">
     <h2 class="section-title">Methods Compared</h2>
-    <p class="section-subtitle">Four state-of-the-art binding site prediction methods</p>
+    <p class="section-subtitle">Three state-of-the-art binding site prediction methods</p>
     
     <div class="methods-list">
       @for (method of methods; track method.id) {

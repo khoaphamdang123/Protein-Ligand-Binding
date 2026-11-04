@@ -25,10 +25,9 @@ export class ColorUtils {
 
   // Method color scheme
   static readonly METHOD_COLORS: Record<string, string> = {
-    'ESM-ORION': '#22D3EE',
-    'BindNode24': '#38BDF8',
+    'AdaBind': '#22D3EE',
     'bindEmbed21DL': '#10B981',
-    'P2Rank': '#F97316'
+    'bindNode24': '#38BDF8'
   };
 
   // Metric color based on threshold

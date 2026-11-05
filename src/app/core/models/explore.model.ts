@@ -1,6 +1,6 @@
 import { DatasetType } from './dataset.model';
 import { PredictionMethod } from './method.model';
-import { BindingType } from './prediction.model';
+import { LigandClass } from './prediction.model';
 
 /**
  * A protein entry in the Explore browser.
@@ -14,7 +14,7 @@ export interface ExploreProtein {
   name: string;
   length: number;
   sequence: string;
-  bindingType: BindingType;
+  bindingType: LigandClass;
   dataset: DatasetType;
   source: 'ESMFold';
 }
@@ -67,6 +67,6 @@ export type ExploreDatasetFilter = DatasetType | 'all';
 export interface ExploreFilters {
   dataset: ExploreDatasetFilter;
   method: PredictionMethod;
-  bindingType: BindingType | 'all';
+  bindingType: LigandClass | 'all';
   searchQuery: string;
 }

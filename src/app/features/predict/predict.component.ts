@@ -26,7 +26,18 @@ const EXAMPLES = [
     name: 'Rubredoxin, Fe site (54 aa)',
     sequence: '>sp|P00268|RUBR_CLOPA Clostridium pasteurianum\nMKKYTCTVCGYIYNPEDGDPDDGVNPGTDFKDIPDDWVCPLCGVGKDQFEEVEE'
   },
+  {
+    name: 'P06956, nucleic-acid site (343 aa)',
+    sequence: '>P06956 TestSet300 golden protein (64 nucleic-acid binding residues)\nMSNLLTVHQNLPALPVDATSDEVRKNLMDMFRDRQAFSEHTWKMLLSVCRSWAAWCKLNNRKWFPAEPEDVRDYLLYLQARGLAVKTIQQHLGQLNMLHRRSGLPRPSDSNAVSLVMRRIRKENVDAGERAKQALAFERTDFDQVRSLMENSDRCQDIRNLAFLGIAYNTLLRIAEIARIRVKDISRTDGGRMLIHIGRTKTLVSTAGVEKALSLGVTKLVERWISVSGVADDPNNYLFCRVRKNGVAAPSATSQLSTRALEGIFEATHRLIYGAKDDSGQRYLAWSGHSARVGAARDMARAGVSIPEIMQAGGWTNVNIVMNYIRNLDSETGAMVRLLEDGD'
+  },
 ];
+
+/** Why nuclear and dna / rna are separate choices (adabind README section 2). */
+const TYPE_HINTS: Partial<Record<BindingType, string>> = {
+  nuclear: 'Binds DNA or RNA, without telling which. A different question from DNA / RNA: do not merge their results.',
+  dna: 'Its own model line trained on DNA-binding labels only (not a split of the nucleic-acid model).',
+  rna: 'Its own model line trained on RNA-binding labels only. Weak on the newest proteins (TestSetNew46).',
+};
 
 const ERROR_TITLES: Record<string, string> = {
   SEQUENCE_INVALID: 'Invalid sequence',
@@ -58,6 +69,7 @@ export class PredictComponent implements OnInit {
   readonly plddtBands = PLDDT_BANDS;
   readonly probabilityGradient = probabilityGradientCss();
   readonly lowPlddt = LOW_PLDDT;
+  readonly typeHints = TYPE_HINTS;
 
   // Input
   inputMode = signal<'sequence' | 'pdb'>('sequence');
@@ -95,6 +107,19 @@ export class PredictComponent implements OnInit {
   });
 
   errorCount = computed(() => (this.diagnostics()?.recent_problems ?? []).filter(p => p.level === 'ERROR').length);
+  selfTest = computed(() => this.diagnostics()?.components.find(c => c.name === 'self-test') ?? null);
+  /** "GPU" / "CPU" when every model runs on the same kind of device, else "GPU + CPU" (details in the tooltip). */
+  deviceSummary = computed(() => {
+    const devices = this.health()?.devices;
+    if (!devices) {
+      return null;
+    }
+    const kinds = new Set(Object.values(devices).map(d => (d.startsWith('cuda') ? 'GPU' : 'CPU')));
+    return {
+      label: kinds.size === 1 ? [...kinds][0] : 'GPU + CPU',
+      title: Object.entries(devices).map(([model, device]) => `${model}: ${device}`).join(' · ')
+    };
+  });
 
   summary = computed(() => {
     const r = this.result();
@@ -138,12 +163,14 @@ export class PredictComponent implements OnInit {
 
   private request?: Subscription;
   private timer?: ReturnType<typeof setInterval>;
+  private statusPoll?: ReturnType<typeof setTimeout>;
 
   ngOnInit(): void {
     this.refreshStatus();
     this.destroyRef.onDestroy(() => {
       this.request?.unsubscribe();
       this.stopTimer();
+      clearTimeout(this.statusPoll);
     });
   }
 
@@ -152,6 +179,11 @@ export class PredictComponent implements OnInit {
       next: health => {
         this.health.set(health);
         this.healthError.set(null);
+        // Models are still loading (start-up self-test): check again shortly.
+        clearTimeout(this.statusPoll);
+        if (health.self_test === 'running' || health.esmfold_local === 'running') {
+          this.statusPoll = setTimeout(() => this.refreshStatus(), 3000);
+        }
       },
       error: (failure: ApiFailure) => {
         this.health.set(null);

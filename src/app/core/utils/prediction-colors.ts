@@ -1,4 +1,4 @@
-import { BindingType } from '../models/prediction.model';
+import { LigandClass } from '../models/prediction.model';
 import { ResidueStatus } from '../models/explore.model';
 
 /**
@@ -27,7 +27,7 @@ export const STATUS_LABELS: Record<ResidueStatus, string> = {
 };
 
 /** Ligand-class colours: the paper evaluates three branches (metal / nucleic / small). */
-export const LIGAND_CLASS_COLORS: Record<BindingType, string> = {
+export const LIGAND_CLASS_COLORS: Record<LigandClass, string> = {
   metal: '#22D3EE',
   nuclear: '#A78BFA',
   small: '#F59E0B',
@@ -37,7 +37,7 @@ export function statusColor(status: ResidueStatus): string {
   return STATUS_COLORS[status];
 }
 
-export function ligandClassColor(bindingType: BindingType): string {
+export function ligandClassColor(bindingType: LigandClass): string {
   return LIGAND_CLASS_COLORS[bindingType];
 }
 

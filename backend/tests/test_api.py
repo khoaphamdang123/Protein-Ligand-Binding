@@ -1,6 +1,8 @@
 """End-to-end tests of the HTTP API against the contract in the integration guide (section 5)."""
 import hashlib
 import logging
+import sys
+import time
 
 import httpx
 import pytest
@@ -8,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 
-from .conftest import FINAL_MODEL_DIR, UBIQUITIN, FakeEsmFold
+from .conftest import FINAL_MODEL_DIR, UBIQUITIN, FakeEsmFold, FakeEsmIfWorker, fake_embedding, requires_golden
 
 pytestmark = pytest.mark.skipif(not (FINAL_MODEL_DIR / "manifest.json").exists(), reason="final_model not present")
 
@@ -18,12 +20,23 @@ MANIFEST_SHA1 = hashlib.sha1((FINAL_MODEL_DIR / "manifest.json").read_bytes()).h
 
 @pytest.fixture
 def make_client(make_settings, esmfold_returning):
-    def _make(fake: FakeEsmFold | None = None, raise_server_exceptions: bool = True, **settings):
+    def _make(fake: FakeEsmFold | None = None, raise_server_exceptions: bool = True, esmif_worker=None,
+              local_esmfold=None, **settings):
         fake = fake or esmfold_returning()
-        app = create_app(make_settings(**settings), esmfold_transport=fake.transport)
+        app = create_app(make_settings(**settings), esmfold_transport=fake.transport, esmif_worker=esmif_worker,
+                         local_esmfold=local_esmfold)
         return TestClient(app, raise_server_exceptions=raise_server_exceptions), fake
 
     return _make
+
+
+@pytest.fixture
+def fake_foundation_models(monkeypatch):
+    """Real pbind + checkpoints, but fixed ESM-2 / ProtT5 arrays (no 5 GB of foundation weights in unit tests)."""
+    from pbind.inference import predictor as pbind_predictor_module
+
+    monkeypatch.setattr(pbind_predictor_module.Predictor, "esm2", lambda self, s: fake_embedding("ESM", s))
+    monkeypatch.setattr(pbind_predictor_module.Predictor, "prott5", lambda self, s: fake_embedding("PROTT5", s))
 
 
 def post_predict(client, sequence=UBIQUITIN, binding_type="metal"):
@@ -42,10 +55,13 @@ def test_health_contract(make_client):
     assert body["model_version"] == MANIFEST_SHA1
     assert body["max_length"] == 400
     assert body["predictor"] == "mock" and body["mock"] is True
+    assert body["binding_types"] == ["metal", "nuclear", "small", "dna", "rna"]
+    assert set(body["thresholds"]) == set(body["binding_types"])
 
 
 @pytest.mark.parametrize("binding_type,threshold", [
-    ("metal", 0.9148463010787964), ("nuclear", 0.7078787878787879), ("small", 0.4901010101010101)])
+    ("metal", 0.9148463010787964), ("nuclear", 0.7078787878787879), ("small", 0.4901010101010101),
+    ("dna", 0.5643434343434344), ("rna", 0.7771717171717172)])
 def test_predict_contract(make_client, binding_type, threshold):
     client, fake = make_client()
     with client:
@@ -83,7 +99,7 @@ def test_same_input_gives_same_result_and_folds_once(make_client):
 
 
 def test_predict_pdb_contract(make_client, ubiquitin_pdb):
-    client, _ = make_client()
+    client, fake = make_client()
     with client:
         response = post_predict_pdb(client, ubiquitin_pdb)
     assert response.status_code == 200, response.text
@@ -103,6 +119,7 @@ def test_predict_pdb_contract(make_client, ubiquitin_pdb):
     assert all(0.0 <= p <= 1.0 for p in r["structure"]["plddt"])
     assert r["mock"] is True
     assert r["timing"]["esmfold_s"] == 0
+    assert fake.calls == []  # an uploaded structure never goes to ESMFold
 
 
 @pytest.mark.parametrize("pdb,message", [
@@ -118,11 +135,38 @@ def test_predict_pdb_invalid(make_client, pdb, message):
     assert body["code"] == "PDB_INVALID" and message in body["detail"]
 
 
+def test_predict_pdb_length_limit_is_the_models_not_the_api(make_client):
+    """No ESMFold for an upload: 401-1000 aa pass even with the API-only limit of 400, above 1000 is refused."""
+    def pdb_of(n):
+        return "".join(f"ATOM  {i + 1:5d}  CA  ALA A{i + 1:4d}    {0:8.3f}{0:8.3f}{0:8.3f}  1.00 90.00           C\n"
+                       for i in range(n))
+
+    client, _ = make_client()
+    with client:
+        ok = post_predict_pdb(client, pdb_of(450))
+        too_long = post_predict_pdb(client, pdb_of(1001))
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["structure"]["plddt"][0] == 0.9  # 0-100 B-factors are rescaled to 0-1
+    assert too_long.status_code == 413 and "limit of the AdaBind models" in too_long.json()["detail"]
+
+
+def test_real_predictor_answers_an_uploaded_pdb(make_client, fake_foundation_models, ubiquitin_pdb):
+    worker = FakeEsmIfWorker()
+    client, api = make_client(predictor="pbind", esmif_worker=worker)
+    with client:
+        response = post_predict_pdb(client, ubiquitin_pdb, "small")
+    r = response.json()
+    assert response.status_code == 200, r
+    assert r["mock"] is False and r["structure"]["source"] == "upload" and len(r["probability"]) == 76
+    assert {"esm_s", "prott5_s", "esmif_s", "model_s"} <= set(r["timing"])
+    assert worker.calls == [UBIQUITIN] and api.calls == []
+
+
 @pytest.mark.parametrize("payload,status,code,message", [
     ({"sequence": "MKV", "binding_type": "metal"}, 400, "SEQUENCE_INVALID", "minimum is 30"),
     ({"sequence": UBIQUITIN[:40] + "X", "binding_type": "metal"}, 400, "SEQUENCE_INVALID", "'X' at 41"),
     ({"sequence": "A" * 401, "binding_type": "small"}, 413, "SEQUENCE_TOO_LONG", "maximum is 400"),
-    ({"sequence": UBIQUITIN, "binding_type": "zinc"}, 400, "REQUEST_INVALID", "metal, nuclear, small"),
+    ({"sequence": UBIQUITIN, "binding_type": "zinc"}, 400, "REQUEST_INVALID", "metal, nuclear, small, dna, rna"),
     ({"binding_type": "metal"}, 400, "REQUEST_INVALID", "sequence: Field required"),
 ])
 def test_invalid_requests(make_client, payload, status, code, message):
@@ -165,7 +209,9 @@ def test_esmfold_failures(make_client, responder, status, message):
 
 
 def test_pbind_not_installed_gives_503_and_degraded_health(make_client, monkeypatch):
-    monkeypatch.setitem(__import__("sys").modules, "pbind", None)
+    monkeypatch.setitem(sys.modules, "pbind", None)
+    monkeypatch.delitem(sys.modules, "pbind.inference.predictor", raising=False)
+    monkeypatch.delitem(sys.modules, "pbind.inference", raising=False)
     client, fake = make_client(predictor="pbind")
     with client:
         health = client.get("/health").json()
@@ -174,21 +220,59 @@ def test_pbind_not_installed_gives_503_and_degraded_health(make_client, monkeypa
     assert health["status"] == "degraded" and health["predictor"] == "pbind" and health["mock"] is False
     assert response.status_code == 503 and response.json()["code"] == "PREDICTOR_UNAVAILABLE"
     predictor = next(c for c in diagnostics["components"] if c["name"] == "predictor")
-    assert predictor["status"] == "error" and "cannot import pbind" in predictor["message"]
+    assert predictor["status"] == "error" and "cannot create pbind.Predictor" in predictor["message"]
 
 
-def test_real_predictor_refuses_when_startup_checks_failed(make_client, monkeypatch):
-    import types
-    fake_pbind = types.ModuleType("pbind")
-    fake_pbind.predict = lambda sequence, **kwargs: {"probability": [0.5] * len(sequence)}
-    monkeypatch.setitem(__import__("sys").modules, "pbind", fake_pbind)
-    client, _ = make_client(predictor="pbind")
+@pytest.mark.parametrize("binding_type", ["metal", "nuclear", "small", "dna", "rna"])
+def test_real_predictor_answers_the_contract(make_client, fake_foundation_models, binding_type):
+    worker = FakeEsmIfWorker()
+    client, _ = make_client(predictor="pbind", esmif_worker=worker)
+    with client:
+        health = client.get("/health").json()
+        response = post_predict(client, binding_type=binding_type)
+    assert health["mock"] is False and health["predictor"] == "pbind" and health["device"] == "cpu"
+    r = response.json()
+    assert response.status_code == 200, r
+    assert r["mock"] is False and r["binding_type"] == binding_type
+    assert len(r["probability"]) == 76 and r["binding"] == [p >= r["threshold"] for p in r["probability"]]
+    assert isinstance(r["warnings"], list)
+    assert {"esmfold_s", "predict_s", "total_s", "esm_s", "esmif_s", "model_s"} <= set(r["timing"])
+    assert worker.calls == [UBIQUITIN]
+    assert worker.closed  # the worker is stopped with the server
+
+
+def test_real_predictor_refuses_when_startup_checks_failed(make_client, fake_foundation_models):
+    client, _ = make_client(predictor="pbind", esmif_worker=FakeEsmIfWorker())
     with client:
         assert post_predict(client).status_code == 200  # all checks pass: real predictor works
         client.app.state.bs.components["final_model"] = {"status": "error", "message": "1 mismatched"}
         response = post_predict(client)
     assert response.status_code == 503
     assert "final_model" in response.json()["detail"]
+
+
+def _wait_self_test(client, timeout=300):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        health = client.get("/health").json()
+        if health["self_test"] != "running":
+            return health
+        time.sleep(0.2)
+    raise AssertionError("self-test did not finish")
+
+
+@requires_golden
+def test_failed_self_test_blocks_predictions(make_client, fake_foundation_models):
+    """Wrong embeddings (here: random ESM-2) give numbers without error; the start-up self-test catches it."""
+    client, _ = make_client(predictor="pbind", esmif_worker=FakeEsmIfWorker(), warmup=True)
+    with client:
+        health = _wait_self_test(client)
+        response = post_predict(client)
+        diagnostics = client.get("/diagnostics").json()
+    assert health["self_test"] == "error" and health["status"] == "degraded"
+    assert response.status_code == 503 and "self-test" in response.json()["detail"]
+    self_test = next(c for c in diagnostics["components"] if c["name"] == "self-test")
+    assert "golden set mismatch" in self_test["message"] and "details" not in self_test
 
 
 def test_missing_model_directory_is_reported(make_client, tmp_path):
@@ -242,3 +326,49 @@ def test_diagnostics_lists_every_startup_check(make_client):
     assert {"manifest", "final_model", "predictor", "ESMFold API (last call)"} <= names
     assert {"weights: ESM-2 650M", "weights: ProtT5-XL half", "weights: ESM-IF1"} <= names
     assert diagnostics["log_file"].endswith("backend.log")
+
+
+# ---------------------------------------------------------------------------------------------- local ESMFold
+from .conftest import FakeLocalEsmFold  # noqa: E402
+
+
+def test_local_esmfold_is_used_and_reported(make_client, ubiquitin_pdb):
+    local = FakeLocalEsmFold(lambda s: ubiquitin_pdb)
+    client, api = make_client(esmfold_local="auto", max_length=1000, local_esmfold=local)
+    with client:
+        health = client.get("/health").json()
+        r = post_predict(client).json()
+        diagnostics = client.get("/diagnostics").json()
+    assert health["max_length"] == 1000 and health["structure_source"] == "local ESMFold, API fallback"
+    assert set(health["devices"]) == {"esmfold", "esm2", "prott5", "esmif", "models"}
+    assert r["structure"]["source"] == "local" and api.calls == [] and local.calls == [UBIQUITIN]
+    names = {c["name"] for c in diagnostics["components"]}
+    assert {"ESMFold (local)", "ESMFold local (last fold)", "ESMFold API (last call)"} <= names
+
+
+def test_api_fallback_is_flagged_in_the_answer(make_client):
+    def fold(sequence):
+        raise RuntimeError("GPU out of memory")
+
+    client, api = make_client(esmfold_local="auto", max_length=1000, local_esmfold=FakeLocalEsmFold(fold))
+    with client:
+        r = post_predict(client).json()
+    assert r["structure"]["source"] == "esmatlas" and api.calls == [UBIQUITIN]
+    assert "GPU out of memory" in r["structure"]["fallback_reason"]
+    assert any("ESMFold API" in w for w in r["warnings"])
+
+
+@requires_golden
+def test_local_esmfold_failing_its_self_test_is_disabled(make_client, ubiquitin_pdb):
+    """A local model that folds the golden protein wrongly is never used; the API (max 400 aa) takes over."""
+    local = FakeLocalEsmFold(lambda s: ubiquitin_pdb)  # golden sequence != ubiquitin -> wrong chain
+    client, api = make_client(esmfold_local="auto", max_length=1000, local_esmfold=local, warmup=True)
+    with client:
+        deadline = time.time() + 60
+        while client.get("/health").json()["esmfold_local"] == "running" and time.time() < deadline:
+            time.sleep(0.1)
+        health = client.get("/health").json()
+        r = post_predict(client).json()
+    assert health["esmfold_local"] == "warning" and health["max_length"] == 400
+    assert health["status"] == "ok"  # the API fallback keeps the service up
+    assert r["structure"]["source"] == "esmatlas" and api.calls == [UBIQUITIN]

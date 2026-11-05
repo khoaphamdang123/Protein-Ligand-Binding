@@ -72,8 +72,29 @@ describe('PredictComponent', () => {
 
   it('shows backend and predictor status', () => {
     expect(el.textContent).toContain('Backend online');
-    expect(el.textContent).toContain('MOCK (pbind not installed)');
+    expect(el.textContent).toContain('MOCK (synthetic)');
     expect(el.textContent).toContain('model_version 54ac716f7650');
+  });
+
+  it('offers the five ligand classes of adabind', () => {
+    const labels = [...el.querySelectorAll('.type-option .type-label')].map(e => e.textContent?.trim());
+    expect(labels).toEqual(['Metal ion', 'Small molecule', 'Nucleic acid', 'DNA', 'RNA']);
+    (el.querySelectorAll('.type-option')[3] as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(el.querySelector('.type-hint')?.textContent).toContain('DNA-binding labels only');
+  });
+
+  it('shows the structure source and the devices of the real models', () => {
+    fixture.componentInstance.refreshStatus();
+    http.expectOne('/api/health').flush({
+      ...HEALTH, predictor: 'pbind', mock: false, structure_source: 'local ESMFold, API fallback', esmfold_local: 'ok',
+      self_test: 'ok', devices: { esmfold: 'cuda', esm2: 'cuda', prott5: 'cpu', esmif: 'cuda', models: 'cuda' },
+    });
+    http.expectOne('/api/diagnostics').flush({ status: 'ok', started: '', log_file: 'x', components: [], recent_problems: [], environment_report: null });
+    fixture.detectChanges();
+    expect(el.textContent).toContain('Structure: local ESMFold, API fallback');
+    expect(el.textContent).toContain('GPU + CPU');
+    expect(el.textContent).toContain('Self-test passed');
   });
 
   it('shows an offline backend', () => {

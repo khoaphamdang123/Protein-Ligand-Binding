@@ -2,7 +2,7 @@ import { Component, OnInit, ViewChild, computed, inject, signal } from '@angular
 import { CommonModule, DecimalPipe, PercentPipe } from '@angular/common';
 import { DatasetType } from '../../core/models/dataset.model';
 import { PredictionMethod } from '../../core/models/method.model';
-import { BINDING_TYPES, BindingType } from '../../core/models/prediction.model';
+import { LIGAND_CLASSES, LigandClass } from '../../core/models/prediction.model';
 import {
   ExploreFilters,
   ExploreProtein,
@@ -39,7 +39,7 @@ export class ExplorerComponent implements OnInit {
   proteins = this.exploreData.proteins;
 
   readonly methods: PredictionMethod[] = ['AdaBind', 'bindEmbed21DL', 'bindNode24'];
-  readonly bindingTypes = BINDING_TYPES;
+  readonly bindingTypes = LIGAND_CLASSES;
   readonly plddtBands = PLDDT_BANDS;
   readonly lowPlddt = LOW_PLDDT;
   readonly statusColors = STATUS_COLORS;
@@ -156,7 +156,7 @@ export class ExplorerComponent implements OnInit {
       this.filters.update(f => ({ ...f, method: method as PredictionMethod }));
     }
     if (type && (this.bindingTypes.map(t => t.value) as string[]).includes(type)) {
-      this.filters.update(f => ({ ...f, bindingType: type as BindingType }));
+      this.filters.update(f => ({ ...f, bindingType: type as LigandClass }));
     }
     if (dataset === 'TestSet300' || dataset === 'TestSetNew46' || dataset === 'all') {
       this.filters.update(f => ({ ...f, dataset }));
@@ -217,7 +217,7 @@ export class ExplorerComponent implements OnInit {
   }
 
   onBindingTypeChange(event: Event): void {
-    const bindingType = (event.target as HTMLSelectElement).value as BindingType | 'all';
+    const bindingType = (event.target as HTMLSelectElement).value as LigandClass | 'all';
     this.filters.update(f => ({ ...f, bindingType }));
     this.currentIndex.set(0);
     this.reloadResult();
@@ -318,7 +318,7 @@ export class ExplorerComponent implements OnInit {
 
   // ---- Display helpers ----
 
-  ligandClassLabel(type: BindingType): string {
+  ligandClassLabel(type: LigandClass): string {
     return this.bindingTypes.find(t => t.value === type)?.label ?? type;
   }
 }

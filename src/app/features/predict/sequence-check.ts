@@ -42,7 +42,7 @@ export function checkSequence(raw: string, minLength: number, maxLength: number)
   if (sequence.length > maxLength) {
     return {
       sequence,
-      error: `Too long: ${sequence.length} residues (maximum ${maxLength}, the limit of the ESMFold API).`
+      error: `Too long: ${sequence.length} residues (maximum ${maxLength}, the limit of the structure predictor).`
     };
   }
   return { sequence, error: null };

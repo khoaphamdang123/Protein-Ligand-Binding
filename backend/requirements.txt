@@ -1,25 +1,23 @@
-# Main backend environment (Python 3.11): web server, ESM-2, ProtT5, pbind (when delivered).
-# CPU build of torch: this machine has no NVIDIA GPU.
-# Install: uv pip install --python .venv --index-strategy unsafe-best-match -r requirements.txt
-#
-# Windows Smart App Control is on and blocks native DLLs it has no reputation for. Verified on this
-# machine: torch 2.4.1-2.9.1 load, torch 2.14.1 is blocked; httptools (uvicorn[standard]) is blocked.
---extra-index-url https://download.pytorch.org/whl/cpu
+# Main backend environment (Python 3.11): web server + pbind.Predictor (ESM-2, ProtT5, features, checkpoints).
+# torch is NOT listed: setup_env.sh installs it first from the PyTorch index that matches the GPU driver
+# (default cu126 = torch 2.14.1, the version verified with the golden set; --cuda cpu for a machine without GPU).
+# pbind itself is installed editable from ../adabind (pip install -e ../adabind).
 
 # web server
 fastapi>=0.115
-uvicorn>=0.30
-watchfiles        # uvicorn --reload
+uvicorn[standard]>=0.30
 httpx>=0.27
 
-# models / features
+# models / features (same as adabind/requirements.txt)
 numpy>=2          # final_model checkpoints pickle arrays via numpy._core (numpy 2.x only)
 scipy
+pandas
+scikit-learn
 biopython
-torch==2.9.1
-transformers
+tqdm
+transformers      # ESM-2, ProtT5
 sentencepiece     # ProtT5 tokenizer
-protobuf
+protobuf          # ProtT5 tokenizer on transformers 5
 
 # tests
 pytest

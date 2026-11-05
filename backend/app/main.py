@@ -1,10 +1,13 @@
-"""BindSite backend. Run with:  python -m uvicorn app.main:create_app --factory --port 8000
+"""BindSite backend. Run with:  .venv/bin/python -m uvicorn app.main:create_app --factory --port 8000
 
-API contract: integration guide section 5. Additive fields (not in the contract):
-`mock`, `timing`, `structure.cached` in /predict; `predictor`, `mock`, `profile`, `min_length` in /health.
+API contract: adabind/docs/APP_INTEGRATION.md section 5, with the five ligand classes of adabind
+(metal, nuclear, small, dna, rna). Additive fields (not in the contract): `mock`, `timing`, `warnings`,
+`structure.cached` in /predict; `predictor`, `mock`, `profile`, `min_length`, `binding_types`, `thresholds`,
+`device`, `self_test` in /health. Additive endpoint: POST /predict-pdb (uploaded structure, chain A, no ESMFold).
 """
 import json
 import logging
+import threading
 import time
 import traceback
 import uuid
@@ -20,26 +23,31 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from . import model_files
-from .config import BINDING_TYPES, Settings, apply_offline_environment
+from .config import API_MAX_LENGTH, BINDING_TYPES, LOCAL_MAX_LENGTH, Settings, apply_offline_environment
 from .errors import ApiError, PredictorUnavailable
 from .esmfold import EsmFoldClient
+from .esmfold_local import LocalEsmFold
+from .esmfold_local import self_test as esmfold_self_test
 from .logging_setup import recent_problems, request_id_var, setup_logging
-from .predictor import create_predictor
-from .sequence import clean_sequence
 from .pdb_utils import read_chain
+from .predictor import SelfTestFailed, create_predictor
+from .sequence import clean_sequence
 
 log = logging.getLogger("bindsite")
 client_log = logging.getLogger("bindsite.client")
 
 
+BindingType = Literal["metal", "nuclear", "small", "dna", "rna"]
+
+
 class PredictRequest(BaseModel):
     sequence: str
-    binding_type: Literal["metal", "nuclear", "small"]
+    binding_type: BindingType
 
 
 class PredictPdbRequest(BaseModel):
     pdb: str
-    binding_type: Literal["metal", "nuclear", "small"]
+    binding_type: BindingType
 
 
 class ClientLogEntry(BaseModel):
@@ -65,8 +73,74 @@ class AppState:
     def ready(self) -> bool:
         return self.thresholds is not None and all(c["status"] != "error" for c in self.components.values())
 
+    def max_length(self) -> int:
+        """Longest sequence accepted now: local ESMFold folds up to settings.max_length, the API up to 400 aa."""
+        local = self.esmfold is not None and self.esmfold.local is not None
+        return self.settings.max_length if local else min(self.settings.max_length, API_MAX_LENGTH)
 
-def _startup_checks(settings: Settings, esmfold_transport: httpx.BaseTransport | None) -> AppState:
+    def structure_source(self) -> str:
+        return "local ESMFold, API fallback" if self.esmfold is not None and self.esmfold.local else "ESMFold API"
+
+
+def _local_esmfold_test(state: AppState) -> None:
+    """Load self-hosted ESMFold and check one golden fold; on failure the API becomes the only source."""
+    settings, client = state.settings, state.esmfold
+    name = "ESMFold (local)"
+    try:
+        if (settings.golden_dir / "index.json").exists():
+            result = esmfold_self_test(client.local, settings.golden_dir)
+            if result["ok"]:
+                state.components[name] = {"status": "ok", "message": result["message"], "details": result["details"]}
+                log.info("Local ESMFold self-test passed: %s", result["message"])
+                return
+            reason = f"golden fold differs from the training PDB: {result['message']}"
+        else:
+            client.local.load()
+            state.components[name] = {"status": "ok", "message": f"loaded on {client.local.device} (no golden set)"}
+            return
+    except Exception as exc:
+        log.exception("Local ESMFold self-test crashed")
+        reason = f"{type(exc).__name__}: {exc}"
+    client.local = None  # never fold with a model that failed its check
+    log.error("Local ESMFold disabled (%s); structures come from the ESMFold API (max %d aa)", reason, API_MAX_LENGTH)
+    state.components[name] = {"status": "warning", "message": f"disabled, using the ESMFold API: {reason}"}
+
+
+def _startup_self_tests(state: AppState) -> None:
+    # One thread, one model at a time: the GPU is shared.
+    if state.esmfold.local is not None:
+        _local_esmfold_test(state)
+    if "self-test" in state.components and state.components["self-test"]["status"] == "running":
+        _self_test(state)
+
+
+def _self_test(state: AppState) -> None:
+    """Background start-up self-test of the real predictor (golden set): loads every model once."""
+    settings = state.settings
+    if not (settings.golden_dir / "index.json").exists():
+        state.components["self-test"] = {"status": "warning",
+                                         "message": f"golden set not found at {settings.golden_dir}: not run"}
+        try:
+            state.predictor.start_worker()
+        except Exception as exc:
+            log.exception("ESM-IF worker failed to start")
+            state.components["self-test"] = {"status": "error", "message": f"ESM-IF worker: {exc}"}
+        return
+    try:
+        result = state.predictor.self_test(settings.golden_dir)
+        state.components["self-test"] = {"status": "ok", "message": result["message"], "details": result["details"]}
+        log.info("Self-test passed: %s", result["message"])
+    except SelfTestFailed as exc:
+        log.error("Self-test FAILED: %s | %s", exc, exc.details)
+        state.components["self-test"] = {"status": "error", "message": f"golden set mismatch: {exc}",
+                                         "details": exc.details}
+    except Exception as exc:
+        log.exception("Self-test crashed")
+        state.components["self-test"] = {"status": "error", "message": f"{type(exc).__name__}: {exc}"}
+
+
+def _startup_checks(settings: Settings, esmfold_transport: httpx.BaseTransport | None,
+                    esmif_worker=None, local_esmfold=None) -> AppState:
     state = AppState(settings=settings, started=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     log.info("Starting BindSite backend: predictor=%s profile=%s weights=%s final_model=%s",
              settings.predictor, settings.profile, settings.weights_dir, settings.final_model_dir)
@@ -105,10 +179,33 @@ def _startup_checks(settings: Settings, esmfold_transport: httpx.BaseTransport |
         if status["status"] != "ok":
             log.error("Foundation weights %s: %s", name, status["message"])
 
-    state.predictor, state.components["predictor"] = create_predictor(
-        settings.predictor, settings.profile, settings.weights_dir, settings.final_model_dir)
+    local = None
+    if settings.esmfold_local == "auto":
+        local = local_esmfold or LocalEsmFold(settings.esmfold_dir, device=settings.device_for("esmfold"))
+        state.components["ESMFold (local)"] = {
+            "status": "running" if settings.warmup else "ok",
+            "message": (f"loading {settings.esmfold_dir.name} on {local.device} and checking a golden fold"
+                        if settings.warmup else f"{settings.esmfold_dir.name} on {local.device}, loads on first use")}
+    else:
+        state.components["ESMFold (local)"] = {
+            "status": "warning",
+            "message": f"not used ({settings.esmfold_dir} missing or BINDSITE_ESMFOLD_LOCAL=off): ESMFold API only, "
+                       f"max {API_MAX_LENGTH} aa"}
+    state.esmfold = EsmFoldClient(settings.esmfold_url, settings.esmfold_timeout, settings.cache_dir, esmfold_transport,
+                                  attempts=settings.esmfold_attempts, backoff=settings.esmfold_backoff,
+                                  total_timeout=settings.esmfold_total_timeout, local=local)
 
-    state.esmfold = EsmFoldClient(settings.esmfold_url, settings.esmfold_timeout, settings.cache_dir, esmfold_transport)
+    state.predictor, state.components["predictor"] = create_predictor(settings, esmif_worker)
+    if not state.predictor.is_mock and state.components["predictor"]["status"] == "ok":
+        if settings.warmup:
+            state.components["self-test"] = {"status": "running", "message": "loading models and checking the "
+                                             "golden set (first start: ~30-60 s)"}
+        else:
+            state.components["self-test"] = {"status": "warning", "message": "disabled (BINDSITE_WARMUP=0): models "
+                                             "load on the first request"}
+    if settings.warmup:
+        # In the background so the server answers /health at once; /predict waits for it (GPU lock).
+        threading.Thread(target=_startup_self_tests, args=(state,), daemon=True, name="self-test").start()
 
     problems = [f"{name}: {c['message']}" for name, c in state.components.items() if c["status"] == "error"]
     if problems:
@@ -118,19 +215,21 @@ def _startup_checks(settings: Settings, esmfold_transport: httpx.BaseTransport |
     return state
 
 
-def create_app(settings: Settings | None = None, esmfold_transport: httpx.BaseTransport | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, esmfold_transport: httpx.BaseTransport | None = None,
+               esmif_worker=None, local_esmfold=None) -> FastAPI:
     settings = settings or Settings.from_env()
     apply_offline_environment(settings)
     log_file = setup_logging(settings.log_dir)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.bs = _startup_checks(settings, esmfold_transport)
+        app.state.bs = _startup_checks(settings, esmfold_transport, esmif_worker, local_esmfold)
         yield
         app.state.bs.esmfold.close()
+        app.state.bs.predictor.close()
         log.info("Backend stopped")
 
-    app = FastAPI(title="BindSite backend", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="BindSite backend", version="0.2.0", lifespan=lifespan)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -185,14 +284,22 @@ def create_app(settings: Settings | None = None, esmfold_transport: httpx.BaseTr
     @app.get("/health")
     def health(request: Request):
         state: AppState = request.app.state.bs
+        self_test = state.components.get("self-test", {}).get("status")
         return {
             "status": "ok" if state.ready() else "degraded",
             "model_version": state.model_version,
-            "max_length": settings.max_length,
+            "max_length": state.max_length(),
             "min_length": settings.min_length,
             "predictor": state.predictor.name,
             "mock": state.predictor.is_mock,
             "profile": settings.profile,
+            "binding_types": list(BINDING_TYPES),
+            "thresholds": state.thresholds,
+            "device": getattr(state.predictor, "device", None),
+            "devices": settings.all_devices(),
+            "structure_source": state.structure_source(),
+            "esmfold_local": state.components.get("ESMFold (local)", {}).get("status"),
+            "self_test": self_test,
         }
 
     @app.get("/diagnostics")
@@ -206,7 +313,10 @@ def create_app(settings: Settings | None = None, esmfold_transport: httpx.BaseTr
             except Exception as exc:
                 log.warning("Cannot read %s: %s", report_file, exc)
                 report = {"status": "error", "message": f"Cannot read {report_file.name}: {exc}"}
-        components = [{"name": name, **c} for name, c in state.components.items()]
+        components = [{"name": name, **{k: v for k, v in c.items() if k != "details"}}
+                      for name, c in state.components.items()]
+        if state.esmfold.local is not None:
+            components.append({"name": "ESMFold local (last fold)", **state.esmfold.last_local})
         components.append({"name": "ESMFold API (last call)", **state.esmfold.last_call})
         return {
             "status": "ok" if state.ready() else "degraded",
@@ -217,31 +327,30 @@ def create_app(settings: Settings | None = None, esmfold_transport: httpx.BaseTr
             "environment_report": report,
         }
 
-    @app.post("/predict")
-    def predict(body: PredictRequest, request: Request):
-        state: AppState = request.app.state.bs
-        started = time.perf_counter()
-        sequence = clean_sequence(body.sequence, settings.min_length, settings.max_length)
+    def threshold_for(state: AppState, binding_type: str) -> float:
         if state.thresholds is None:
             raise PredictorUnavailable("Model manifest could not be loaded; see /diagnostics.")
         if not state.predictor.is_mock and not state.ready():
             # Corrupted/missing checkpoints or weights would give wrong numbers without any error.
             failed = ", ".join(name for name, c in state.components.items() if c["status"] == "error")
             raise PredictorUnavailable(f"Start-up checks failed ({failed}); refusing to predict. See /diagnostics.")
-        threshold = state.thresholds[body.binding_type]
+        return state.thresholds[binding_type]
 
-        fold = state.esmfold.fold(sequence)
+    def run_prediction(state: AppState, sequence: str, binding_type: str, threshold: float, pdb: str,
+                       structure: dict, warnings: list[str], esmfold_seconds: float, started: float,
+                       origin: str) -> dict:
         predict_started = time.perf_counter()
-        probability = state.predictor.predict(sequence, body.binding_type, fold.pdb, threshold)
+        prediction = state.predictor.predict(sequence, binding_type, pdb, threshold)
+        probability = prediction.probability
         predict_seconds = time.perf_counter() - predict_started
 
         binding = [p >= threshold for p in probability]
-        log.info("Predicted %s for %d aa: %d binding residues (%s predictor)",
-                 body.binding_type, len(sequence), sum(binding), state.predictor.name)
+        log.info("Predicted %s for %s (%d aa): %d binding residues (%s predictor)",
+                 binding_type, origin, len(sequence), sum(binding), state.predictor.name)
         return {
             "sequence": sequence,
             "length": len(sequence),
-            "binding_type": body.binding_type,
+            "binding_type": binding_type,
             "profile": settings.profile,
             "model_version": state.model_version,
             "threshold": threshold,
@@ -251,21 +360,39 @@ def create_app(settings: Settings | None = None, esmfold_transport: httpx.BaseTr
                 {"index": i + 1, "aa": sequence[i], "probability": probability[i]}
                 for i, is_binding in enumerate(binding) if is_binding
             ],
-            "structure": {"source": "esmatlas", "plddt": fold.plddt, "pdb": fold.pdb, "cached": fold.cached},
+            "structure": structure,
             "mock": state.predictor.is_mock,
+            "warnings": prediction.warnings + warnings,
             "timing": {
-                "esmfold_s": round(fold.seconds, 3),
+                "esmfold_s": round(esmfold_seconds, 3),
                 "predict_s": round(predict_seconds, 3),
                 "total_s": round(time.perf_counter() - started, 3),
+                **prediction.timing,
             },
         }
+
+    @app.post("/predict")
+    def predict(body: PredictRequest, request: Request):
+        state: AppState = request.app.state.bs
+        started = time.perf_counter()
+        sequence = clean_sequence(body.sequence, settings.min_length, state.max_length(),
+                                  limit_reason=f"the structure predictor: {state.structure_source()}")
+        threshold = threshold_for(state, body.binding_type)
+
+        fold = state.esmfold.fold(sequence)
+        structure = {"source": fold.source, "plddt": fold.plddt, "pdb": fold.pdb, "cached": fold.cached,
+                     "fallback_reason": fold.fallback_reason}
+        warnings = [f"Structure from the ESMFold API: {fold.fallback_reason}."] if fold.fallback_reason else []
+        return run_prediction(state, sequence, body.binding_type, threshold, fold.pdb, structure, warnings,
+                              fold.seconds, started, "sequence")
 
     @app.post("/predict-pdb")
     def predict_pdb(body: PredictPdbRequest, request: Request):
         """Predict binding residues for an uploaded PDB structure (chain A).
 
-        Skips ESMFold: the uploaded structure is used as-is, so the sequence and
-        per-residue confidence (B-factor of CA) are read from the file.
+        Skips ESMFold: the uploaded structure is used as-is, so the sequence and per-residue confidence (B-factor
+        of CA) are read from the file. The length limit is the one of the models (pbind: 30-1000 aa), not the one
+        of the ESMFold API.
         """
         state: AppState = request.app.state.bs
         started = time.perf_counter()
@@ -273,53 +400,21 @@ def create_app(settings: Settings | None = None, esmfold_transport: httpx.BaseTr
         if "ATOM" not in body.pdb:
             raise ApiError(400, "PDB_INVALID",
                            "The uploaded file has no ATOM records; it does not look like a PDB structure.")
-
         chain = read_chain(body.pdb, "A")
         if not chain.sequence:
             raise ApiError(400, "PDB_INVALID",
                            "The uploaded PDB has no residues in chain A. Only chain A is supported.")
-        sequence = clean_sequence(chain.sequence, settings.min_length, settings.max_length)
+        sequence = clean_sequence(chain.sequence, settings.min_length, LOCAL_MAX_LENGTH,
+                                  limit_reason="the AdaBind models")
+        threshold = threshold_for(state, body.binding_type)
 
-        if state.thresholds is None:
-            raise PredictorUnavailable("Model manifest could not be loaded; see /diagnostics.")
-        if not state.predictor.is_mock and not state.ready():
-            failed = ", ".join(name for name, c in state.components.items() if c["status"] == "error")
-            raise PredictorUnavailable(f"Start-up checks failed ({failed}); refusing to predict. See /diagnostics.")
-        threshold = state.thresholds[body.binding_type]
-
-        predict_started = time.perf_counter()
-        probability = state.predictor.predict(sequence, body.binding_type, body.pdb, threshold)
-        predict_seconds = time.perf_counter() - predict_started
-
-        binding = [p >= threshold for p in probability]
         plddt = chain.plddt
         if plddt and max(plddt) > 1.0:
             # ESMFold/AlphaFold-style B-factors are pLDDT on a 0-100 scale; rescale for display.
             plddt = [p / 100.0 for p in plddt]
-
-        log.info("Predicted %s for uploaded PDB (%d aa): %d binding residues (%s predictor)",
-                 body.binding_type, len(sequence), sum(binding), state.predictor.name)
-        return {
-            "sequence": sequence,
-            "length": len(sequence),
-            "binding_type": body.binding_type,
-            "profile": settings.profile,
-            "model_version": state.model_version,
-            "threshold": threshold,
-            "probability": probability,
-            "binding": binding,
-            "binding_residues": [
-                {"index": i + 1, "aa": sequence[i], "probability": probability[i]}
-                for i, is_binding in enumerate(binding) if is_binding
-            ],
-            "structure": {"source": "upload", "plddt": plddt, "pdb": body.pdb, "cached": False},
-            "mock": state.predictor.is_mock,
-            "timing": {
-                "esmfold_s": 0,
-                "predict_s": round(predict_seconds, 3),
-                "total_s": round(time.perf_counter() - started, 3),
-            },
-        }
+        structure = {"source": "upload", "plddt": plddt, "pdb": body.pdb, "cached": False, "fallback_reason": None}
+        return run_prediction(state, sequence, body.binding_type, threshold, body.pdb, structure, [], 0.0, started,
+                              "uploaded PDB")
 
     @app.post("/client-log", status_code=204)
     def receive_client_log(entry: ClientLogEntry):

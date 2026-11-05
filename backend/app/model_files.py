@@ -14,8 +14,9 @@ FOUNDATION_FILES = {
     "ESM-IF1 in TORCH_HOME": ("torch_home/hub/checkpoints/esm_if1_gvp4_t16_142M_UR50.pt", 1_700_450_121, None),
 }
 # Foundation models each profile needs (manifest "foundation_models"; ESMFold runs through the API).
+# ESM-IF1 is loaded from esm_if1/ by the worker; the TORCH_HOME copy is what fair-esm's hub loader would use.
 PROFILE_FOUNDATIONS = {
-    "final": ("ESM-2 650M", "ProtT5-XL half", "ESM-IF1", "ESM-IF1 in TORCH_HOME"),
+    "final": ("ESM-2 650M", "ProtT5-XL half", "ESM-IF1"),
     "lite": ("ESM-2 650M",),
 }
 
@@ -30,6 +31,10 @@ def thresholds(manifest: dict, profile: str) -> dict[str, float]:
     profiles = manifest["profiles"]
     if profile not in profiles:
         raise KeyError(f"profile '{profile}' not in manifest (available: {', '.join(profiles)})")
+    missing = [bt for bt in BINDING_TYPES if bt not in profiles[profile]]
+    if missing:
+        raise KeyError(f"profile '{profile}' of manifest.json has no {', '.join(missing)} model "
+                       f"(use the manifest shipped with adabind)")
     return {bt: float(profiles[profile][bt]["threshold"]) for bt in BINDING_TYPES}
 
 

@@ -100,6 +100,18 @@ npm start
 
 访问 http://localhost:4200
 
+### Trang Predict (dự đoán thật bằng model adabind)
+
+Cần backend Python chạy ở cổng 8000 (dev server proxy `/api` sang đó):
+
+```bash
+bash backend/setup_env.sh        # một lần: .venv + .venv-esmif
+cd backend && .venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+Rồi mở http://127.0.0.1:4200/predict. Chi tiết (ESMFold local / API, chọn GPU/CPU cho từng model, kiểm tra):
+[backend/README.md](backend/README.md).
+
 ### 构建生产版本
 ```bash
 npm run build

@@ -13,8 +13,23 @@
           Backend {{ h.status === 'ok' ? 'online' : 'degraded' }}
         </span>
         <span class="chip" [class.warning]="h.mock" [class.ok]="!h.mock">
-          Model: {{ h.mock ? 'MOCK (pbind not installed)' : 'AdaBind · ' + h.profile }}
+          Model: {{ h.mock ? 'MOCK (synthetic)' : 'AdaBind · ' + h.profile }}
         </span>
+        @if (deviceSummary(); as d) {
+          <span class="chip" [attr.title]="d.title">{{ d.label }}</span>
+        }
+        @if (h.structure_source) {
+          <span class="chip" [class.ok]="h.esmfold_local === 'ok'" [class.warning]="h.esmfold_local === 'warning'">
+            Structure: {{ h.structure_source }}
+          </span>
+        }
+        @if (h.self_test === 'running' || h.esmfold_local === 'running') {
+          <span class="chip warning"><span class="spinner"></span>Loading models (self-test)…</span>
+        } @else if (h.self_test === 'ok') {
+          <span class="chip ok" [attr.title]="selfTest()?.message">Self-test passed</span>
+        } @else if (h.self_test === 'error') {
+          <span class="chip error" [attr.title]="selfTest()?.message">Self-test failed</span>
+        }
         <span class="chip mono">model_version {{ h.model_version ? h.model_version.slice(0, 12) : 'unavailable' }}</span>
       } @else if (healthError(); as e) {
         <span class="chip error">{{ e.code === 'PROXY_MISSING' ? 'API proxy missing' : 'Backend offline' }}</span>
@@ -95,7 +110,7 @@
               <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
             <span class="pdb-drop-title">{{ pdbFileName() ?? 'Choose a PDB file' }}</span>
-            <span class="pdb-drop-hint">.pdb or .ent — chain A is used directly (no ESMFold).</span>
+            <span class="pdb-drop-hint">.pdb or .ent — chain A (30–1000 residues) is used directly (no ESMFold).</span>
           </label>
           <div class="field-foot">
             @if (pdbCheck().error) {
@@ -125,9 +140,12 @@
             </button>
           }
         </div>
+        @if (typeHints[bindingType()]; as hint) {
+          <p class="hint type-hint">{{ hint }}</p>
+        }
         @if (loading()) {
           <button type="button" class="btn btn-secondary" (click)="cancel()">Cancel · {{ elapsed() }} s</button>
-          <p class="hint"><span class="spinner"></span>{{ inputMode() === 'pdb' ? 'Scoring residues…' : 'Folding with ESMFold (7–25 s), then scoring residues…' }}</p>
+          <p class="hint"><span class="spinner"></span>{{ inputMode() === 'pdb' ? 'Scoring residues…' : 'Folding with ESMFold (seconds up to ~400 aa, minutes for long chains), then scoring residues…' }}</p>
         } @else {
           <button type="button" class="btn btn-primary" [disabled]="!canSubmit()" (click)="predict()">Predict</button>
           <p class="hint">{{ inputMode() === 'pdb' ? 'Uses the uploaded structure directly (chain A).' : 'Ctrl+Enter in the sequence box also runs it.' }}</p>
@@ -154,8 +172,12 @@
       @if (r.mock) {
         <div class="alert alert-warning" role="status">
           <strong>Demo predictions.</strong>
-          The AdaBind inference code (pbind) is not installed yet, so these binding probabilities are synthetic.
-          The 3D structure and pLDDT are real (ESMFold).
+          The backend runs the mock predictor (BINDSITE_PREDICTOR=mock), so these binding probabilities are synthetic.
+          The 3D structure and pLDDT are real.
+        </div>
+      } @else if (r.warnings?.length) {
+        <div class="alert alert-warning" role="status">
+          @for (w of r.warnings; track $index) { <div><strong>Note:</strong> {{ w }}</div> }
         </div>
       }
 
@@ -180,7 +202,8 @@
           @if (r.timing) {
             <div class="metric">
               <span class="metric-label">Time</span>
-              <span class="metric-value">{{ r.timing.total_s | number: '1.1-1' }} s <small>{{ r.structure.source === 'upload' ? 'uploaded structure' : (r.structure.cached ? 'structure cached' : 'incl. ESMFold') }}</small></span>
+              <span class="metric-value">{{ r.timing.total_s | number: '1.1-1' }} s
+                <small>{{ r.structure.source === 'upload' ? 'uploaded structure' : (r.structure.cached ? 'structure cached' : 'ESMFold ' + (r.timing.esmfold_s | number: '1.1-1') + ' s') }} · model {{ r.timing.predict_s | number: '1.1-1' }} s</small></span>
             </div>
           }
         </div>
@@ -189,7 +212,7 @@
       <div class="results-grid">
         <div class="card viewer-card">
           <div class="card-head">
-            <h3>Structure <small>{{ r.structure.source === 'upload' ? 'Uploaded' : 'ESMFold' }}</small></h3>
+            <h3>Structure <small>{{ r.structure.source === 'upload' ? 'Uploaded' : 'ESMFold · ' + (r.structure.source === 'local' ? 'self-hosted' : 'ESM Atlas API') + (r.structure.cached ? ' (cached)' : '') }}</small></h3>
             <div class="segmented" role="group" aria-label="Colour by">
               <button type="button" [class.active]="colorMode() === 'probability'" (click)="colorMode.set('probability')">Binding probability</button>
               <button type="button" [class.active]="colorMode() === 'plddt'" (click)="colorMode.set('plddt')">pLDDT</button>
@@ -278,9 +301,26 @@
       <h3>How to read the results</h3>
       <ul>
         <li>Each ligand class has its own model and threshold, so probabilities are not comparable across classes. Metal uses a high threshold: few residues are marked, but most of them are correct.</li>
+        <li><em>Nucleic acid</em> answers "does it bind DNA or RNA?"; <em>DNA</em> and <em>RNA</em> are separate models that answer for one of them. They are different questions: do not combine their results.</li>
         <li>Where pLDDT is below {{ lowPlddt }}, the predicted structure, and the structure-based prediction there, is less reliable.</li>
         <!-- <li>This is a research aid that suggests candidate residues; it does not replace experiments.</li> -->
       </ul>
+      <div class="table-scroll">
+        <table class="accuracy">
+          <thead>
+            <tr><th>Ligand class</th><th>Precision<br><small>marked residues that are correct</small></th><th>Recall<br><small>true binding residues found</small></th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Metal ion</td><td>66–79%</td><td>36–64%</td></tr>
+            <tr><td>Small molecule</td><td>47–49%</td><td>50–55%</td></tr>
+            <tr><td>Nucleic acid (DNA or RNA)</td><td>67% (TestSet300) · <strong>12% (TestSetNew46)</strong></td><td>23–33%</td></tr>
+            <tr><td>DNA</td><td>68% (TestSet300) · <strong>29% (TestSetNew46)</strong></td><td>15–20%</td></tr>
+            <tr><td>RNA</td><td>68% (TestSet300) · <strong>4% (TestSetNew46)</strong></td><td>21–27%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small">Measured on two independent test sets (TestSet300, TestSetNew46) at the thresholds of the final profile
+        (adabind/decisions). Nucleic-acid, DNA and RNA predictions on the newest proteins (TestSetNew46) are weak, as for the published methods.</p>
     </div>
   </div>
 </div>

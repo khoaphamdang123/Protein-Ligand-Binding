@@ -1,124 +1,155 @@
 # BindSite backend
 
-API dự đoán residue binding cho trang **Predict** của BindSite Explorer, theo hợp đồng ở mục 5 của tài liệu tích hợp.
+API dự đoán residue binding cho trang **Predict** của BindSite Explorer. Model: gói `adabind/`
+(`pbind` + 140 checkpoint, 5 loại ligand). Hợp đồng API: mục 5 của `adabind/docs/APP_INTEGRATION.md`.
 
 ```
-UI (Angular, /predict)  ──/api──▶  dev-server proxy  ──▶  FastAPI :8000
-                                                          ├─ kiểm tra input (30–400 aa, 20 amino acid chuẩn)
-                                                          ├─ ESMFold API (cache theo sha1(sequence), kiểm tra chain A trùng sequence)
-                                                          └─ predictor: mock (hiện tại) │ pbind (khi nhóm model giao)
+UI (Angular :4200, /predict) ──/api──▶ dev-server proxy ──▶ FastAPI :8000
+  ├─ kiểm tra input (30–1000 aa khi có ESMFold local, 30–400 khi chỉ có API; 20 amino acid chuẩn)
+  ├─ cấu trúc: ESMFold v1 tự host (foundation_models/esmfold_v1)  ──lỗi──▶  ESM Atlas API (dự phòng, ≤ 400 aa)
+  │            cache theo sha1(sequence) + nguồn (.json), chain A phải trùng sequence
+  ├─ embedding: ESM-2 650M, ProtT5-XL (nuclear/small/dna/rna)  — trong .venv
+  │             ESM-IF1                                         — worker chạy lâu trong .venv-esmif
+  └─ pbind.Predictor: feature + checkpoint của loại ligand → xác suất từng residue → so ngưỡng manifest
+```
+
+| `binding_type` | nghĩa | ckpt | ngưỡng |
+|---|---|---|---|
+| `metal` | ion kim loại | 5 | 0,9148 |
+| `small` | phân tử nhỏ | 40 | 0,4901 |
+| `nuclear` | DNA **hoặc** RNA | 35 | 0,7079 |
+| `dna` | riêng DNA (dòng model riêng) | 30 | 0,5643 |
+| `rna` | riêng RNA (dòng model riêng) | 30 | 0,7772 |
+
+## Cài (Linux, một lần)
+
+```bash
+cd /home/hien/Protein_Ligand_Binding_newest/Protein-Ligand-Binding_New
+unzip adabind_*.zip -d adabind          # nếu chưa giải nén
+bash backend/setup_env.sh               # .venv (torch 2.14.1+cu126) + .venv-esmif (python 3.10 qua conda, torch 2.4.1+cu121)
+npm ci --legacy-peer-deps               # frontend (Node ≥ 22.22 / 24.15; máy này: ~/.local/bin/node 24.22)
+```
+
+`setup_env.sh --cuda cpu` cho máy không có GPU NVIDIA. Thư mục model:
+
+```
+Protein-Ligand-Binding_New/
+├── adabind/final_model/        140 checkpoint + manifest.json   (BINDSITE_FINAL_MODEL_DIR)
+├── adabind/golden_set/         12 protein kiểm tra              (BINDSITE_GOLDEN_DIR)
+└── foundation_models/          (BINDSITE_WEIGHTS_DIR)
+    ├── esm2_t33_650M_UR50D/  prot_t5_xl_half_uniref50-enc/  esm_if1/  torch_home/
+    └── esmfold_v1/             tự host ESMFold (8,4 GB) — có thư mục này thì dùng local trước, API là dự phòng
 ```
 
 ## Chạy
 
-Mở 2 terminal ở thư mục gốc repo:
-
-```powershell
-# 1. Backend
-cd backend
-.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --http h11
-
-# 2. Frontend (host 127.0.0.1 và proxy /api đã cấu hình trong angular.json)
+```bash
+# terminal 1 — backend
+cd backend && .venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+# terminal 2 — frontend
 npm start
 ```
 
-Mở http://127.0.0.1:4200/predict. Trong VS Code có thể dùng **Terminal → Run Task → `dev: backend + frontend`** để chạy cả hai.
+Mở http://127.0.0.1:4200/predict. VS Code: **Terminal → Run Task → `dev: backend + frontend`**.
 
-> Phải gọi `python -m uvicorn` / `python -m pytest`, không gọi `uvicorn.exe` / `pytest.exe`: Smart App Control chặn các file `.exe` mà uv sinh ra.
+Lúc khởi động, backend trả lời `/health` ngay, rồi chạy **self-test ở nền** (~40–60 s lần đầu): load ESMFold và fold
+1 protein golden (so RMSD Cα với PDB lúc train), load ESM-2 / ProtT5 / worker ESM-IF / 140 checkpoint và so 1
+protein golden với embedding + dự đoán tham chiếu. Request `/predict` gửi trong lúc đó sẽ chờ cho xong.
+
+- Self-test của model binding **không đạt** → `/health` = `degraded`, `/predict` trả 503 (số sai mà không báo lỗi
+  còn tệ hơn không có số).
+- ESMFold local **không đạt** (hoặc load lỗi) → tắt local, chỉ dùng API (giới hạn tự hạ về 400 aa). Dịch vụ vẫn chạy.
+
+## Chọn GPU / CPU cho từng model
+
+Mỗi model có biến riêng; không đặt thì lấy `BINDSITE_DEVICE`; không đặt nữa thì `cuda` nếu có, ngược lại `cpu`.
+Giá trị: `cpu`, `cuda`, `cuda:N`.
+
+| Biến | Model | Ghi chú khi chạy CPU |
+|---|---|---|
+| `BINDSITE_DEVICE_ESMFOLD` | ESMFold v1 (tự host) | rất chậm (vài phút/protein); ESM-2 3B bên trong chạy fp32 thay vì fp16 |
+| `BINDSITE_DEVICE_ESM2` | ESM-2 650M | fp32 như lúc train, nhanh |
+| `BINDSITE_DEVICE_PROTT5` | ProtT5-XL | fp32 thay fp16 (đúng cách `pbind` làm); chậm hơn |
+| `BINDSITE_DEVICE_ESMIF` | ESM-IF1 (worker) | fp32 như lúc train |
+| `BINDSITE_DEVICE_MODELS` | 140 checkpoint + feature | nhanh |
+| `BINDSITE_DEVICE` | mặc định cho tất cả | |
+
+Ví dụ: `BINDSITE_DEVICE_ESMFOLD=cpu BINDSITE_DEVICE_PROTT5=cpu .venv/bin/python -m uvicorn ...`.
+`/health` trả `devices` (UI hiện chip GPU / CPU, rê chuột để xem từng model).
+
+**Bộ nhớ GPU** (đo trên RTX 4090): ESMFold 8,4 GB + 0,9 GB (343 aa) / 2,6 GB (600 aa) / 4,7 GB (813 aa) / 7 GB
+(1000 aa) lúc fold; ESM-2 + ProtT5 + checkpoint ~6,9 GB; worker ESM-IF ~1,7 GB. Tổng ~19 GB cho chuỗi 400 aa. GPU
+dùng chung với process khác có thể hết bộ nhớ với chuỗi dài: khi đó ESMFold local báo lỗi và backend dùng API
+(≤ 400 aa) hoặc báo 413. Thời gian fold local: 2–10 s tới 343 aa, ~40 s ở 600 aa, ~90 s ở 813 aa, ~170 s ở 1000 aa.
+
+## Kiểm tra — từ nhanh tới kỹ
+
+```bash
+cd backend
+.venv/bin/python -m pytest -q                         # ~120 test (~2 phút): API, ESMFold local/API, worker, checkpoint thật
+BINDSITE_TEST_ESMFOLD=1 .venv/bin/python -m pytest -q tests/test_esmfold_local_real.py   # load ESMFold thật
+.venv/bin/python scripts/check_environment.py --full-hash   # sha256 model nền, ESMFold, self-test, 5 loại ligand (~1,5 phút)
+.venv/bin/python scripts/verify_golden_e2e.py         # 12 protein golden, CHỈ từ sequence: fold mới → dự đoán → so lúc train
+cd .. && npx ng test --watch=false                    # 41 test frontend
+```
+
+Kiểm tra của nhóm model (`adabind/scripts/verify_installation.py`, cần ESM-IF golden tính trong `.venv-esmif` bằng
+`adabind/scripts/esmif_embed.py --golden-dir ...`): trên máy này **[2] pipeline lệch ≤ 1,4e-7, [3] cosine embedding
+1,00000**. Hai FAIL còn lại không do cài đặt:
+
+- `[1] manifest.json version`: golden set được tạo trước khi thêm DNA/RNA vào manifest (README của adabind có nói).
+- `[4] nuclear` lệch 0,062 ở P06956: lệch này có sẵn ngay trong golden set (`pipeline_final_nuclear` vs
+  `training_final_nuclear`), kể cả khi dùng chính embedding lúc train; embedding tính trên máy này chỉ thêm ≤ 0,0006.
 
 ## Endpoint
 
 | Endpoint | Mô tả |
 |---|---|
-| `POST /predict` | `{"sequence", "binding_type"}` → kết quả theo mục 5. Thêm các trường `mock`, `timing`, `structure.cached` (không có trong hợp đồng). |
-| `GET /health` | `status`, `model_version` (sha1 của `manifest.json`), `max_length`, và thêm `predictor`, `mock`, `profile`. |
-| `GET /diagnostics` | Kết quả kiểm tra lúc khởi động, báo cáo `check_environment.py`, 50 warning/error gần nhất. UI hiển thị ở nút **Show diagnostics**. |
-| `POST /client-log` | UI gửi lỗi phía trình duyệt về đây, để mọi lỗi nằm chung một file log. |
+| `POST /predict` | `{"sequence", "binding_type"}` → kết quả theo mục 5. Thêm: `mock`, `warnings`, `timing` (`esmfold_s`, `esm_s`, `prott5_s`, `esmif_s`, `model_s`, …), `structure.source` (`local` \| `esmatlas`), `structure.cached`, `structure.fallback_reason`. |
+| `GET /health` | `status`, `model_version`, `max_length` (theo nguồn cấu trúc hiện có) + `binding_types`, `thresholds`, `devices`, `structure_source`, `esmfold_local`, `self_test`. |
+| `GET /diagnostics` | Kết quả kiểm tra lúc khởi động + self-test, lần fold local/API gần nhất, `environment_report.json`, 50 warning/error gần nhất. UI: **Show diagnostics**. |
+| `POST /predict-pdb` | `{"pdb", "binding_type"}`: dự đoán trên cấu trúc người dùng upload (chỉ chain A), **không** gọi ESMFold. Sequence và pLDDT (B-factor của CA, thang 0–100 được đổi về 0–1) đọc từ file; giới hạn 30–1000 aa (giới hạn của model, không phải của ESMFold API). Trả về giống `/predict`, với `structure.source` = `upload`. |
+| `POST /client-log` | UI gửi lỗi phía trình duyệt về log backend. |
 
-Lỗi trả về dạng `{"detail": "...", "code": "...", "request_id": "..."}`:
+Embedding được cache trong RAM theo (sequence, PDB): đổi loại ligand cho cùng protein chỉ tốn thời gian chạy checkpoint (<2 s).
+
+Lỗi trả về dạng `{"detail", "code", "request_id"}`:
 
 | HTTP | `code` | Khi nào |
 |---|---|---|
 | 400 | `SEQUENCE_INVALID`, `REQUEST_INVALID` | sequence sai, `binding_type` sai, body không phải JSON |
-| 413 | `SEQUENCE_TOO_LONG` | dài hơn 400 aa (giới hạn ESMFold API) |
-| 502 | `ESMFOLD_FAILED` | ESMFold API lỗi/timeout, hoặc PDB trả về không khớp sequence |
-| 503 | `PREDICTOR_UNAVAILABLE` | không load được manifest; `pbind` chưa cài; kiểm tra checksum/weight thất bại (khi dùng `pbind`) |
-| 500 | `PREDICTOR_FAILED`, `INTERNAL_ERROR` | `pbind.predict` lỗi hoặc trả kết quả sai định dạng; lỗi không lường trước |
+| 400 | `PDB_INVALID` | `/predict-pdb`: file không có dòng ATOM, hoặc chain A trống |
+| 413 | `SEQUENCE_TOO_LONG` | dài hơn giới hạn (1000 với ESMFold local, 400 với API) |
+| 502 | `ESMFOLD_FAILED` | ESMFold local lỗi **và** API lỗi/timeout (API được thử lại tối đa 3 lần trong 110 s), hoặc PDB không khớp sequence |
+| 503 | `PREDICTOR_UNAVAILABLE` | manifest/checkpoint/weight lỗi, hoặc self-test golden không đạt |
+| 500 | `PREDICTOR_FAILED`, `INTERNAL_ERROR` | `pbind` / ESM-IF lỗi, kết quả sai định dạng; lỗi không lường trước |
 
-## Lỗi được ghi ở đâu
-
-- `backend/logs/backend.log`: mọi request (kèm `request_id`), mọi lỗi kèm traceback, lỗi phía trình duyệt (logger `bindsite.client`). File xoay vòng 5 MB × 5.
-- `backend/logs/environment_report.json`: kết quả `scripts/check_environment.py`.
-- Trên UI: **Show diagnostics** ở trang Predict. Mỗi lỗi hiện kèm `request_id` để tra trong log.
-
-Lúc khởi động backend tự kiểm tra: đọc `manifest.json`, so checksum toàn bộ checkpoint của profile (230 file, ~0.4 s), kiểm tra file weight có đủ và đúng dung lượng, rồi tạo predictor. Lỗi ở bước nào cũng **không làm sập server**: nó được ghi log, hiện trong `/diagnostics`, và `/health` trả `degraded`.
-
-## Kiểm tra môi trường (load thật các model nền)
-
-```powershell
-cd backend
-.venv\Scripts\python.exe scripts\check_environment.py              # ~1 phút
-.venv\Scripts\python.exe scripts\check_environment.py --full-hash  # thêm sha256 của 6.7 GB weight
-```
-
-Script chạy ESM-2, ProtT5 (môi trường chính) và ESM-IF (môi trường `.venv-esmif`, qua `scripts/esmif_embed.py`) trên ubiquitin theo đúng thiết lập trong `FOUNDATION_MODELS.md`. Nó chỉ kiểm tra shape, giá trị hữu hạn và thời gian chạy. Đây **không phải** phép so với golden set: golden set cần feature lúc train do nhóm model cung cấp.
-
-## Test
-
-```powershell
-cd backend
-.venv\Scripts\python.exe -m pytest -q        # 69 test: validation, ESMFold client, checksum, predictor, API contract
-cd ..
-npx ng test --watch=false                    # 38 test frontend
-```
-
-## Khi nhóm model giao `pbind`
-
-1. Cài vào môi trường chính: `& $env:USERPROFILE\.local\bin\uv.exe pip install --python .venv <đường dẫn pbind>` (hoặc theo hướng dẫn của nhóm model). Nếu `pbind` cần thêm thư viện native, kiểm tra xem Smart App Control có chặn không (xem bảng cuối).
-2. Chạy `verify_installation.py` của nhóm model, phải ra PASS.
-3. Chạy backend với `BINDSITE_PREDICTOR=pbind`:
-   ```powershell
-   $env:BINDSITE_PREDICTOR = "pbind"; .venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --port 8000 --http h11
-   ```
-4. Banner "Demo predictions" trên UI sẽ biến mất. `/health` trả `"mock": false`.
-
-`app/predictor.py` gọi `pbind.predict(sequence, binding_type=..., pdb=..., profile=..., weights_dir=..., final_model_dir=...)` đúng như mục 7. Nó kiểm tra kết quả trả về (đủ độ dài, nằm trong [0, 1], ngưỡng khớp manifest) trước khi trả cho UI.
+Log: `backend/logs/backend.log` (xoay vòng 5 MB × 5), mỗi dòng kèm `request_id`.
 
 ## Cấu hình (biến môi trường)
 
 | Biến | Mặc định |
 |---|---|
-| `BINDSITE_PREDICTOR` | `mock` (`pbind` khi đã cài) |
+| `BINDSITE_PREDICTOR` | `pbind` (`mock` = xác suất giả, để làm UI không cần model) |
 | `BINDSITE_PROFILE` | `final` |
-| `BINDSITE_WEIGHTS_DIR` | `<repo>/model_weights` |
-| `BINDSITE_FINAL_MODEL_DIR` | `<repo>/final_models/final_model` |
+| `BINDSITE_WEIGHTS_DIR` | `<repo>/foundation_models` |
+| `BINDSITE_FINAL_MODEL_DIR` / `BINDSITE_GOLDEN_DIR` | `<repo>/adabind/final_model` / `<repo>/adabind/golden_set` |
+| `BINDSITE_ESMFOLD_LOCAL` | `auto` (dùng `esmfold_v1` nếu có) \| `off` (chỉ API) |
+| `BINDSITE_DEVICE`, `BINDSITE_DEVICE_<ESMFOLD\|ESM2\|PROTT5\|ESMIF\|MODELS>` | xem mục chọn GPU / CPU |
+| `BINDSITE_MIN_LENGTH`, `BINDSITE_MAX_LENGTH` | 30; 1000 khi có ESMFold local, 400 khi không |
+| `BINDSITE_WARMUP` | `1` (self-test lúc khởi động; `0` = model load ở request đầu) |
+| `BINDSITE_ESMIF_PYTHON`, `BINDSITE_ESMIF_TIMEOUT` | `backend/.venv-esmif/bin/python`, 300 s |
+| `ESMFOLD_URL`, `ESMFOLD_TIMEOUT`, `ESMFOLD_ATTEMPTS`, `ESMFOLD_BACKOFF`, `ESMFOLD_TOTAL_TIMEOUT` | ESM Atlas API, 90 s/lần, 3 lần, 3 s, 110 s tổng |
 | `BINDSITE_CACHE_DIR` / `BINDSITE_LOG_DIR` | `backend/cache` / `backend/logs` |
-| `BINDSITE_ESMIF_PYTHON` | `backend/.venv-esmif/Scripts/python.exe` |
-| `ESMFOLD_URL`, `ESMFOLD_TIMEOUT` | ESM Atlas API, 90 s |
-| `BINDSITE_MIN_LENGTH`, `BINDSITE_MAX_LENGTH` | 30, 400 |
 
-Backend tự đặt `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, `TORCH_HOME=model_weights/torch_home` (mục 4). `model_weights/torch_home/hub/checkpoints/esm_if1_gvp4_t16_142M_UR50.pt` là **hardlink** tới `model_weights/esm_if1/…`, nên không tốn thêm dung lượng.
+Backend tự đặt `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, `TORCH_HOME=foundation_models/torch_home`.
 
-## Môi trường trên máy này (khác tài liệu ở đâu và vì sao)
+## Khác với tài liệu của nhóm model ở đâu (và vì sao)
 
-| | Tài liệu | Máy này | Lý do |
+| | Tài liệu | Ở đây | Lý do |
 |---|---|---|---|
-| Phần cứng | GPU NVIDIA | **CPU** (AMD Radeon 860M, không có CUDA) | 3 model nền vẫn chạy: ESM-2 0.5 s, ProtT5 1.1 s, ESM-IF 0.7 s cho 76 aa |
-| Hệ điều hành | Linux/WSL2 | Windows, venv | Theo yêu cầu: không dùng WSL |
-| Python | — | 3.11.9 (chính), 3.10.11 (ESM-IF), bản chính thức có ký số từ python.org | **Smart App Control** đang bật, chặn file `.exe`/DLL chưa có chữ ký hoặc ít người dùng |
-| torch (chính) | — | 2.9.1+cpu | torch 2.14.1 bị Smart App Control chặn; 2.4.1–2.9.1 chạy được |
-| ProtT5 | fp16 trên GPU | fp32 trên CPU | CPU không chạy fp16. Cần golden set để xác nhận lệch nằm trong ngưỡng (cosine ≥ 0.999) |
-| torch-scatter (ESM-IF) | 2.1.2 | DLL bị chặn, dùng stand-in thuần PyTorch | Encoder ESM-IF không gọi hàm nào của torch-scatter (xem `scripts/esmif_embed.py`), nên embedding không đổi |
-| httptools | (uvicorn[standard]) | không dùng, chạy `--http h11` | bị Smart App Control chặn |
-| Tên file weight | `model.safetensors`, `pytorch_model.bin` | đã đổi từ `model-001.*` cho đúng tên | `from_pretrained` chỉ tìm tên chuẩn. sha256 khớp tài liệu |
-
-Cài lại từ đầu (Python lấy từ python.org vì bản do uv tải về bị chặn; `uv` nằm ở `%USERPROFILE%\.local\bin\uv.exe`):
-
-```powershell
-cd backend
-Set-Alias uv $env:USERPROFILE\.local\bin\uv.exe
-uv venv .venv --python $env:LOCALAPPDATA\Programs\Python\Python311\python.exe
-uv venv .venv-esmif --python $env:LOCALAPPDATA\Programs\Python\Python310\python.exe
-uv pip install --python .venv --index-strategy unsafe-best-match -r requirements.txt
-uv pip install --python .venv-esmif --index-strategy unsafe-best-match -r requirements-esmif.txt
-```
+| ESMFold | API, tự host là tuỳ chọn | tự host trước, API dự phòng | API công khai hay trả 504 sau ~30 s (đo ngày 05/11/2026: 30–80 s hoặc lỗi; local 2–10 s) |
+| Load ESMFold | `.cuda()` rồi `esm.half()` | `esm.half()` trên CPU rồi mới lên GPU | cùng trọng số và phép tính; đỉnh VRAM 8,5 GB thay vì ~14 GB |
+| TF32 (ESMFold) | bật toàn cục | chỉ bật trong lúc fold (dưới khoá GPU) | ESM-2/ProtT5/checkpoint chạy chung process và lúc train không dùng TF32 |
+| ESM-IF | subprocess mỗi request | 1 worker chạy lâu (`scripts/esmif_worker.py`) | load model 1,7 GB một lần; tự khởi động lại nếu worker chết |
+| Python ESM-IF | 3.10 | 3.10 từ conda (máy không có python3.10 hệ thống) | |

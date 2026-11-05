@@ -12,7 +12,9 @@ import {
 
 /** Backend base URL; the dev server proxies /api to http://127.0.0.1:8000 (proxy.conf.json). */
 export const API_BASE_URL = '/api';
-export const PREDICT_TIMEOUT_MS = 120_000;   // integration guide: ESMFold 7-25 s + model time
+// Local ESMFold: seconds up to ~400 aa, ~1.5 min at 800 aa, ~3 min at 1000 aa on a shared GPU;
+// API fallback: 7-25 s, retried within 110 s. Plus a few seconds of model time.
+export const PREDICT_TIMEOUT_MS = 300_000;
 const STATUS_TIMEOUT_MS = 15_000;
 
 @Injectable({
@@ -52,7 +54,7 @@ export class PredictionApiService {
 
 const BACKEND_DOWN =
   'Cannot reach the prediction backend. Start it with: ' +
-  'cd backend; .venv\\Scripts\\python.exe -m uvicorn app.main:create_app --factory --port 8000 --http h11';
+  'cd backend && .venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000';
 const PROXY_MISSING =
   'The dev server answered /api itself instead of forwarding it to the backend: it was started without ' +
   'the /api proxy. Stop it (Ctrl+C) and run `npm start` again (proxy.conf.json is set in angular.json).';

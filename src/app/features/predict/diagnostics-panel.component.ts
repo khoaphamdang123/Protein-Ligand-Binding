@@ -32,7 +32,7 @@ import { DiagnosticsResponse } from '../../core/models/prediction.model';
           } @else if (d.environment_report?.message) {
             <p class="muted">{{ d.environment_report?.message }}</p>
           } @else {
-            <p class="muted">Not run yet: <code>cd backend; .venv\\Scripts\\python.exe scripts\\check_environment.py</code></p>
+            <p class="muted">Not run yet: <code>cd backend && .venv/bin/python scripts/check_environment.py</code></p>
           }
         </section>
 
@@ -78,6 +78,8 @@ import { DiagnosticsResponse } from '../../core/models/prediction.model';
     .dot.ok { background: var(--color-success); }
     .dot.warning { background: var(--color-warning); }
     .dot.error { background: var(--color-error); }
+    .dot.running { background: var(--color-primary); animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: 0.3; } }
     .problems li {
       display: grid;
       grid-template-columns: auto auto 1fr;

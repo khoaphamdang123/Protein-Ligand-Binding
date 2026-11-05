@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { DatasetType } from '../models/dataset.model';
 import { PredictionMethod } from '../models/method.model';
-import { BindingType } from '../models/prediction.model';
+import { LigandClass } from '../models/prediction.model';
 import {
   ExploreMetrics,
   ExploreProtein,
@@ -121,7 +121,7 @@ export class ExploreDataService {
     return proteins;
   }
 
-  private pickBindingType(rand: () => number, i: number): BindingType {
+  private pickBindingType(rand: () => number, i: number): LigandClass {
     const roll = rand();
     if (roll < 0.34) return 'metal';
     if (roll < 0.62) return 'nuclear';
@@ -197,7 +197,7 @@ export class ExploreDataService {
     return values.map(v => Math.min(1, Math.max(0, v)));
   }
 
-  private generateGroundTruth(length: number, bindingType: BindingType, rand: () => number): boolean[] {
+  private generateGroundTruth(length: number, bindingType: LigandClass, rand: () => number): boolean[] {
     const gt = new Array<boolean>(length).fill(false);
     const clusterSize = (): number => {
       switch (bindingType) {

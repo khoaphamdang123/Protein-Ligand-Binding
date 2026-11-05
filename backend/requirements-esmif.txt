@@ -1,11 +1,7 @@
-# ESM-IF1 environment (Python 3.10), versions from FOUNDATION_MODELS.md section 5.
-# Only change vs. the doc: CPU wheels instead of cu121 (no NVIDIA GPU on this machine).
-# On this machine Smart App Control blocks the torch-scatter DLL; scripts/esmif_embed.py then
-# registers a pure-PyTorch stand-in (the ESM-IF encoder never calls torch-scatter, see that file).
-# Install: uv pip install --python .venv-esmif --index-strategy unsafe-best-match -r requirements-esmif.txt
---extra-index-url https://download.pytorch.org/whl/cpu
---find-links https://data.pyg.org/whl/torch-2.4.0+cpu.html
-
+# ESM-IF1 environment (Python 3.10, numpy<2): only computes the ESM-IF embedding (scripts/esmif_worker.py).
+# Versions from adabind/docs/FOUNDATION_MODELS.md section 5 -- changing them shifts the features silently.
+# torch 2.4.1 and torch-scatter 2.1.2 are installed first by setup_env.sh from the PyTorch / PyG indexes
+# (cu121 by default, cpu with --cuda cpu).
 numpy<2
 scipy
 biopython
@@ -13,6 +9,4 @@ tqdm
 ml-collections
 biotite==0.41.2
 fair-esm==2.0.0
-torch==2.4.1
-torch-scatter==2.1.2
 torch-geometric==2.6.1

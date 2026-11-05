@@ -4,7 +4,8 @@ from .errors import SequenceError
 STANDARD_AA = frozenset("ACDEFGHIKLMNPQRSTVWY")
 
 
-def clean_sequence(raw: str, min_length: int, max_length: int) -> str:
+def clean_sequence(raw: str, min_length: int, max_length: int,
+                   limit_reason: str = "the structure predictor: ESMFold API") -> str:
     """Strip one optional FASTA header and all whitespace, uppercase, then validate."""
     lines = (raw or "").strip().splitlines()
     headers = [line for line in lines if line.lstrip().startswith(">")]
@@ -29,7 +30,7 @@ def clean_sequence(raw: str, min_length: int, max_length: int) -> str:
     if len(sequence) > max_length:
         raise SequenceError(
             f"Sequence has {len(sequence)} residues; the maximum is {max_length} "
-            f"(limit of the ESMFold API used to predict the structure).",
+            f"(limit of {limit_reason}).",
             too_long=True,
         )
     return sequence

@@ -417,6 +417,10 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
     this.plugin.managers.interactivity.lociSelects.selectOnly({ loci });
     if (zoom) {
       this.plugin.managers.camera.focusLoci(loci, { minRadius: 4, extraRadius: 2, durationMs: 400 });
+      // `focusLoci` narrows the camera's clipping `radius` to the residue, so
+      // zooming back out afterwards would clip the rest of the protein. Once the
+      // focus animation finishes, widen `radius` back to the full scene radius.
+      this.scheduleClippingWiden(400);
     }
   }
 
@@ -425,7 +429,18 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
     const loci = this.residueLoci(indices);
     if (loci) {
       this.plugin.managers.camera.focusLoci(loci, { minRadius: 6, extraRadius: 6, durationMs: 600 });
+      this.scheduleClippingWiden(600);
     }
+  }
+
+  private scheduleClippingWiden(durationMs: number): void {
+    window.setTimeout(() => {
+      const camera = this.plugin?.canvas3d?.camera;
+      if (!camera) return;
+      // Restore the clipping radius to the whole scene so near/far planes keep
+      // covering the protein regardless of how far the user zooms back out.
+      camera.setState({ radius: camera.state.radiusMax }, 0);
+    }, durationMs + 80);
   }
 
   private residueLoci(indices: number[]): Loci | null {

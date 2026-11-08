@@ -369,6 +369,163 @@ select:focus-visible {
 .font-semibold { font-weight: var(--font-weight-semibold); }
 .font-bold { font-weight: var(--font-weight-bold); }
 
+/* ========================================
+   Workbench: panels, toolbars and tables shared by Explore and Predict
+   ======================================== */
+
+.wb-page {
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-6) var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.wb-panel {
+  background-color: var(--color-bg-panel);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.wb-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-primary);
+
+  h2 {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0;
+  }
+}
+
+.wb-sub {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-tertiary);
+}
+
+.wb-field-label {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-tertiary);
+}
+
+.wb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.wb-toolbar-end { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
+
+.wb-segmented {
+  display: inline-flex;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-base);
+  overflow: hidden;
+  background-color: var(--color-bg-primary);
+
+  button {
+    padding: 6px var(--space-3);
+    font: inherit;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: 0;
+    border-left: 1px solid var(--color-border-primary);
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:first-child { border-left: 0; }
+    &:hover:not(.active):not(:disabled) { color: var(--color-text-primary); background-color: var(--color-bg-hover); }
+    &.active { color: var(--color-text-inverse); background-color: var(--color-primary); font-weight: var(--font-weight-medium); }
+    &:disabled { color: var(--color-text-disabled); cursor: not-allowed; }
+  }
+}
+
+.wb-tool {
+  padding: 6px var(--space-3);
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-base);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) { color: var(--color-text-primary); border-color: var(--color-text-tertiary); }
+  &:disabled { opacity: 0.45; cursor: not-allowed; }
+}
+
+.wb-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+
+  input { accent-color: var(--color-primary); }
+}
+
+.wb-select {
+  width: 100%;
+  padding: 7px var(--space-3);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-base);
+  cursor: pointer;
+}
+
+.wb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    text-align: right;
+    color: var(--color-text-tertiary);
+    background-color: var(--color-bg-panel);
+    border-bottom: 1px solid var(--color-border-primary);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 6px var(--space-4);
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--color-text-primary);
+    border-bottom: 1px solid var(--color-border-secondary);
+    white-space: nowrap;
+  }
+
+  th:first-child, td:first-child { text-align: left; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background-color: var(--color-bg-hover); }
+  tr.selected td { background-color: color-mix(in srgb, var(--color-primary) 14%, transparent); }
+}
+
 /* Animations */
 @keyframes fadeIn {
   from {

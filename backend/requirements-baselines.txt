@@ -1,0 +1,5 @@
+# bindEmbed21DL + bindNode24 worker (scripts/baseline_worker.py), on the CPU.
+# torch is NOT listed: setup_env.sh installs torch==2.2.2 from the CPU index first.
+# Versions pinned by the original bindNode24 repository (baselines_2124/bindNode24/requirements-upstream.txt).
+torch-geometric==2.5.0
+numpy<2

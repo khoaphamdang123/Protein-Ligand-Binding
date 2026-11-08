@@ -4,6 +4,8 @@ import logging
 import sys
 import time
 
+import numpy as np
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -21,10 +23,14 @@ MANIFEST_SHA1 = hashlib.sha1((FINAL_MODEL_DIR / "manifest.json").read_bytes()).h
 @pytest.fixture
 def make_client(make_settings, esmfold_returning):
     def _make(fake: FakeEsmFold | None = None, raise_server_exceptions: bool = True, esmif_worker=None,
-              local_esmfold=None, **settings):
+              local_esmfold=None, baseline_worker=None, alphafold=None, **settings):
         fake = fake or esmfold_returning()
+        if alphafold is not None:
+            settings.setdefault("alphafold_db", True)
+            settings.setdefault("alphafold_db_url", "https://alphafold.test")
         app = create_app(make_settings(**settings), esmfold_transport=fake.transport, esmif_worker=esmif_worker,
-                         local_esmfold=local_esmfold)
+                         local_esmfold=local_esmfold, baseline_worker=baseline_worker,
+                         alphafold_transport=alphafold.transport if alphafold is not None else None)
         return TestClient(app, raise_server_exceptions=raise_server_exceptions), fake
 
     return _make
@@ -194,7 +200,7 @@ def connect_timeout(request):
 
 @pytest.mark.parametrize("responder,status,message", [
     (lambda r: httpx.Response(500, text="boom"), 502, "HTTP 500"),
-    (lambda r: httpx.Response(413, text="Sequence is longer than 400."), 413, "too long"),
+    (lambda r: httpx.Response(413, text="Sequence is longer than 400."), 502, "HTTP 413"),
     (connect_timeout, 502, "timed out"),
 ])
 def test_esmfold_failures(make_client, responder, status, message):
@@ -328,47 +334,227 @@ def test_diagnostics_lists_every_startup_check(make_client):
     assert diagnostics["log_file"].endswith("backend.log")
 
 
-# ---------------------------------------------------------------------------------------------- local ESMFold
-from .conftest import FakeLocalEsmFold  # noqa: E402
+# ---------------------------------------------------------------------------------------------- structure sources
+from .conftest import FakeLocalEsmFold, FakeLocalFold  # noqa: E402
 
 
-def test_local_esmfold_is_used_and_reported(make_client, ubiquitin_pdb):
-    local = FakeLocalEsmFold(lambda s: ubiquitin_pdb)
-    client, api = make_client(esmfold_local="auto", max_length=1000, local_esmfold=local)
+def test_precomputed_structure_is_served_without_folding(make_client, ubiquitin_pdb, tmp_path):
+    folder = tmp_path / "esmfold_files"
+    folder.mkdir()
+    (folder / "P0CG48.pdb").write_text(ubiquitin_pdb)
+    local = FakeLocalFold(lambda s: ubiquitin_pdb)
+    client, api = make_client(esmfold_files_dir=folder, esmfold_local="auto", local_esmfold=local)
+    with client:
+        r = post_predict(client).json()
+        health = client.get("/health").json()
+    assert r["structure"]["source"] == "precomputed" and r["structure"]["detail"] == "P0CG48.pdb"
+    assert r["structure"]["cached"] is True and api.calls == [] and local.calls == []
+    assert health["structure_sources"]["precomputed"]["count"] == 1
+    assert set(health["structure_sources"]) == {"precomputed", "esmatlas", "local"}
+
+
+def test_local_esmfold_is_used_after_the_api_and_reported(make_client, ubiquitin_pdb):
+    local = FakeLocalFold(lambda s: ubiquitin_pdb)
+    client, api = make_client(FakeEsmFold(lambda r: httpx.Response(503, text="")), esmfold_local="auto",
+                              max_length=1000, local_esmfold=local)
     with client:
         health = client.get("/health").json()
         r = post_predict(client).json()
         diagnostics = client.get("/diagnostics").json()
-    assert health["max_length"] == 1000 and health["structure_source"] == "local ESMFold, API fallback"
+    assert health["max_length"] == 1000 and health["esmfold_local"] == "ok"
     assert set(health["devices"]) == {"esmfold", "esm2", "prott5", "esmif", "models"}
-    assert r["structure"]["source"] == "local" and api.calls == [] and local.calls == [UBIQUITIN]
+    assert r["structure"]["source"] == "local" and len(api.calls) == 3 and local.calls == [UBIQUITIN]
+    assert "ESMFold API failed" in r["structure"]["fallback_reason"]
+    assert any("local ESMFold" in w for w in r["warnings"])
     names = {c["name"] for c in diagnostics["components"]}
-    assert {"ESMFold (local)", "ESMFold local (last fold)", "ESMFold API (last call)"} <= names
+    assert {"ESMFold (local)", "ESMFold (precomputed)", "ESMFold local (last fold)", "ESMFold API (last call)"} <= names
 
 
-def test_api_fallback_is_flagged_in_the_answer(make_client):
-    def fold(sequence):
-        raise RuntimeError("GPU out of memory")
-
-    client, api = make_client(esmfold_local="auto", max_length=1000, local_esmfold=FakeLocalEsmFold(fold))
+def test_cpu_fold_answers_202_then_the_structure(make_client, ubiquitin_pdb):
+    """Local ESMFold on the CPU: the request is answered at once (202, still folding); the UI asks again."""
+    local = FakeLocalFold(lambda s: ubiquitin_pdb, device="cpu")
+    client, api = make_client(FakeEsmFold(lambda r: httpx.Response(503, text="")), esmfold_local="auto",
+                              max_length=1000, local_esmfold=local)
     with client:
-        r = post_predict(client).json()
-    assert r["structure"]["source"] == "esmatlas" and api.calls == [UBIQUITIN]
-    assert "GPU out of memory" in r["structure"]["fallback_reason"]
-    assert any("ESMFold API" in w for w in r["warnings"])
+        first = post_predict(client)
+        deadline = time.time() + 10
+        while local.calls == [] and time.time() < deadline:
+            time.sleep(0.02)
+        time.sleep(0.2)
+        second = post_predict(client)
+    body = first.json()
+    assert first.status_code == 202 and body["code"] == "STRUCTURE_FOLDING" and "request_id" in body
+    assert body["folding"]["length"] == len(UBIQUITIN) and body["folding"]["device"] == "cpu"
+    assert second.status_code == 200 and second.json()["structure"]["source"] == "local"
+    assert any("local ESMFold" in w for w in second.json()["warnings"])  # why, kept with the cached structure
+    assert len(api.calls) == 3  # the API is not asked again by the second request
+
+
+def test_no_structure_source_answers_structure_unavailable(make_client):
+    local = FakeLocalFold(ready=(False, "GPU busy: 8.5 of 24.0 GB free, ESMFold needs 10 GB"))
+    client, _ = make_client(FakeEsmFold(lambda r: httpx.Response(500, text="boom")), esmfold_local="auto",
+                            local_esmfold=local)
+    with client:
+        response = post_predict(client)
+        health = client.get("/health").json()
+    body = response.json()
+    assert response.status_code == 502 and body["code"] == "STRUCTURE_UNAVAILABLE"
+    assert "GPU busy" in body["detail"] and "upload" in body["detail"]
+    assert health["status"] == "ok" and health["esmfold_local"] == "warning"  # never blocks predictions
 
 
 @requires_golden
-def test_local_esmfold_failing_its_self_test_is_disabled(make_client, ubiquitin_pdb):
-    """A local model that folds the golden protein wrongly is never used; the API (max 400 aa) takes over."""
-    local = FakeLocalEsmFold(lambda s: ubiquitin_pdb)  # golden sequence != ubiquitin -> wrong chain
-    client, api = make_client(esmfold_local="auto", max_length=1000, local_esmfold=local, warmup=True)
+def test_local_esmfold_failing_its_golden_fold_never_folds(make_client, ubiquitin_pdb):
+    """A local model that folds the golden protein wrongly is disabled; the service stays up."""
+    local = FakeLocalEsmFold(lambda s: ubiquitin_pdb, device="cpu")  # golden sequence != ubiquitin -> wrong chain
+    client, api = make_client(esmfold_local="auto", max_length=1000, local_esmfold=local, warmup=True,
+                              devices=(("esmfold", "cpu"),))
     with client:
         deadline = time.time() + 60
-        while client.get("/health").json()["esmfold_local"] == "running" and time.time() < deadline:
+        while client.get("/health").json()["esmfold_local"] in ("running", None) and time.time() < deadline:
             time.sleep(0.1)
+        time.sleep(0.2)
         health = client.get("/health").json()
         r = post_predict(client).json()
-    assert health["esmfold_local"] == "warning" and health["max_length"] == 400
-    assert health["status"] == "ok"  # the API fallback keeps the service up
+    assert health["structure_sources"]["local"]["state"] == "disabled"
+    assert health["esmfold_local"] == "error" and health["status"] == "ok"
     assert r["structure"]["source"] == "esmatlas" and api.calls == [UBIQUITIN]
+
+
+# ---------------------------------------------------------------------------------------------- compare mode
+from app.baselines import BaselineError  # noqa: E402
+
+from .conftest import FakeBaselineWorker  # noqa: E402
+
+
+def post_compare(client, pdb, binding_type="metal", sequence=UBIQUITIN):
+    return client.post("/compare", json={"sequence": sequence, "pdb": pdb, "binding_type": binding_type})
+
+
+@pytest.mark.parametrize("ligand,output,p21,p24", [
+    ("metal", "metal", 0.9, 0.6),      # columns: metal, nuclear, small
+    ("small", "small", 0.6, 0.9),
+    ("dna", "nuclear", 0.2, 0.2),      # no DNA or RNA output: the nucleic-acid column
+    ("rna", "nuclear", 0.2, 0.2),
+])
+def test_compare_returns_the_right_output_of_both_models(make_client, ubiquitin_pdb, ligand, output, p21, p24):
+    worker = FakeBaselineWorker()
+    client, api = make_client(baseline_worker=worker)
+    with client:
+        response = post_compare(client, ubiquitin_pdb, ligand)
+    assert response.status_code == 200 and api.calls == []  # uses the given structure, folds nothing
+    body = response.json()
+    assert worker.calls == [((76, 1024), (76, 3))]
+    bind21, bind24 = body["models"]["bindEmbed21DL"], body["models"]["bindNode24"]
+    assert bind21["output"] == bind24["output"] == output
+    assert bind21["threshold"] == bind24["threshold"] == 0.5
+    assert bind21["probability"] == [p21] * 76 and bind24["probability"] == [p24] * 76
+    assert bind21["binding"] == [p21 >= 0.5] * 76 and bind24["binding"] == [p24 >= 0.5] * 76
+    assert set(body["timing"]) == {"alphafold_s", "prott5_s", "models_s", "total_s"}
+    assert body["models"]["bindNode24"]["structure"] == {"source": "same", "reason": "AlphaFold DB lookup is off"}
+
+
+def test_compare_without_the_environment_says_how_to_install_it(make_client, ubiquitin_pdb):
+    client, _ = make_client(baseline_worker=FakeBaselineWorker(problem="/x/python not found"))
+    with client:
+        response = post_compare(client, ubiquitin_pdb)
+        health = client.get("/health").json()
+    assert response.status_code == 503 and response.json()["code"] == "BASELINES_UNAVAILABLE"
+    assert "/x/python not found" in response.json()["detail"]
+    assert health["compare"] is False and health["status"] == "ok"  # prediction itself is not affected
+
+
+def test_compare_rejects_a_structure_of_another_sequence(make_client, ubiquitin_pdb):
+    worker = FakeBaselineWorker()
+    client, _ = make_client(baseline_worker=worker)
+    with client:
+        response = post_compare(client, ubiquitin_pdb, sequence=UBIQUITIN[:-1] + "A")
+    assert response.status_code == 400 and response.json()["code"] == "PDB_INVALID"
+    assert worker.calls == []
+
+
+def test_compare_reports_a_failing_worker(make_client, ubiquitin_pdb):
+    client, _ = make_client(baseline_worker=FakeBaselineWorker(error=BaselineError("baseline worker died")))
+    with client:
+        response = post_compare(client, ubiquitin_pdb)
+    assert response.status_code == 500 and response.json()["code"] == "BASELINES_FAILED"
+    assert "worker died" in response.json()["detail"]
+
+
+def test_health_reports_compare_available(make_client):
+    client, _ = make_client(baseline_worker=FakeBaselineWorker())
+    with client:
+        assert client.get("/health").json()["compare"] is True
+
+
+# ---------------------------------------------------------------------------------------------- bindNode24 structure
+from app.esmfold_local import ca_coords  # noqa: E402
+
+from .conftest import FakeAlphaFoldDB, moved_pdb  # noqa: E402
+
+
+def test_bindnode24_runs_on_the_alphafold_db_model_when_there_is_one(make_client, ubiquitin_pdb):
+    worker, afdb = FakeBaselineWorker(), FakeAlphaFoldDB({UBIQUITIN: moved_pdb(ubiquitin_pdb)})
+    client, _ = make_client(baseline_worker=worker, alphafold=afdb)
+    with client:
+        body = post_compare(client, ubiquitin_pdb).json()
+        health = client.get("/health").json()
+    assert np.allclose(worker.cas[0], ca_coords(moved_pdb(ubiquitin_pdb)))    # the AlphaFold coordinates
+    s = body["models"]["bindNode24"]["structure"]
+    assert s["source"] == "alphafold_db" and s["entry"] == "AF-P0CG48-F1" and s["rmsd"] < 0.01
+    assert np.allclose(ca_coords(s["pdb"]), ca_coords(ubiquitin_pdb), atol=0.01)  # shown in the frame of the others
+    assert len(s["plddt"]) == 76 and max(s["plddt"]) <= 1
+    assert body["models"]["bindEmbed21DL"]["structure"] == {"source": "none"}
+    assert health["alphafold_db"] is True
+    with client:
+        own = client.post("/compare", json={"sequence": UBIQUITIN, "pdb": ubiquitin_pdb, "binding_type": "metal",
+                                            "accession": "Q99999"}).json()
+    assert own["models"]["bindNode24"]["structure"]["entry"] == "AF-Q99999-F1"
+
+
+def test_bindnode24_falls_back_to_the_prediction_structure(make_client, ubiquitin_pdb):
+    worker = FakeBaselineWorker()
+    client, _ = make_client(baseline_worker=worker, alphafold=FakeAlphaFoldDB({}))
+    with client:
+        body = post_compare(client, ubiquitin_pdb).json()
+    assert np.allclose(worker.cas[0], ca_coords(ubiquitin_pdb))
+    assert body["models"]["bindNode24"]["structure"] == {"source": "same", "reason": "not in AlphaFold DB"}
+
+
+def test_an_uploaded_structure_is_never_replaced(make_client, ubiquitin_pdb):
+    worker, afdb = FakeBaselineWorker(), FakeAlphaFoldDB({UBIQUITIN: moved_pdb(ubiquitin_pdb)})
+    client, _ = make_client(baseline_worker=worker, alphafold=afdb)
+    with client:
+        body = client.post("/compare", json={"sequence": UBIQUITIN, "pdb": ubiquitin_pdb, "binding_type": "metal",
+                                             "alphafold": False}).json()
+    assert afdb.calls == [] and np.allclose(worker.cas[0], ca_coords(ubiquitin_pdb))
+    assert body["models"]["bindNode24"]["structure"]["reason"] == "the structure was uploaded"
+
+
+def test_cors_allows_only_the_configured_web_origins(make_client):
+    """Static hosting: the page on https://site.example calls this API directly (config.json apiBaseUrl)."""
+    client, _ = make_client(cors_origins=("https://site.example",))
+    with client:
+        ok = client.get("/health", headers={"Origin": "https://site.example"})
+        other = client.get("/health", headers={"Origin": "https://evil.example"})
+        preflight = client.options("/predict", headers={"Origin": "https://site.example",
+                                                        "Access-Control-Request-Method": "POST",
+                                                        "Access-Control-Request-Headers": "content-type"})
+    assert ok.headers["access-control-allow-origin"] == "https://site.example"
+    assert "x-request-id" in ok.headers["access-control-expose-headers"].lower()
+    assert "access-control-allow-origin" not in other.headers
+    assert preflight.status_code == 200 and preflight.headers["access-control-allow-origin"] == "https://site.example"
+
+
+def test_no_cors_headers_by_default(make_client):
+    client, _ = make_client()
+    with client:
+        r = client.get("/health", headers={"Origin": "https://site.example"})
+    assert "access-control-allow-origin" not in r.headers
+
+
+def test_cors_origins_from_the_environment(monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.setenv("BINDSITE_CORS_ORIGINS", " https://a.example/, https://b.example ,,")
+    assert Settings.from_env().cors_origins == ("https://a.example", "https://b.example")

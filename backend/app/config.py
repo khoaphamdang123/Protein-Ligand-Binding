@@ -40,13 +40,20 @@ class Settings:
     esmif_python: Path
     device: str = ""        # default device of every model: "" = cuda when available, else cpu
     devices: tuple = ()     # per-model overrides, e.g. (("esmfold", "cpu"),); see DEVICE_KEYS
-    esmfold_local: str = "off"   # "auto": self-hosted ESMFold first, API as fallback | "off": API only
+    esmfold_local: str = "off"   # "auto": self-hosted ESMFold as the last automatic source (GPU with room) | "off"
     esmif_timeout: float = 300.0
     warmup: bool = True     # run the full pipeline once at start-up (loads every model, golden self-test)
     golden_dir: Path = REPO_DIR / "adabind" / "golden_set"
     esmfold_attempts: int = 3          # retries of gateway errors / timeouts (the public API is flaky)
     esmfold_backoff: float = 3.0
     esmfold_total_timeout: float = 110.0  # all attempts; the UI gives up after 150 s
+    esmfold_files_dir: Path | None = None  # precomputed ESMFold PDBs looked up by sequence (None = not used)
+    esmfold_min_free_gb: float = 10.0      # local ESMFold loads only on a GPU with this much free memory
+    baselines_python: Path = BACKEND_DIR / ".venv-baselines" / _VENV_BIN / _VENV_PY   # bindEmbed21DL + bindNode24 worker
+    baselines_dir: Path = REPO_DIR / "baselines_2124"
+    alphafold_db: bool = False             # compare mode: bindNode24 on the AlphaFold DB model when there is one
+    alphafold_db_url: str = "https://alphafold.ebi.ac.uk"
+    cors_origins: tuple = ()               # web pages on other origins allowed to call the API (static hosting)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -67,7 +74,7 @@ class Settings:
             esmfold_url=os.environ.get("ESMFOLD_URL", "https://api.esmatlas.com/foldSequence/v1/pdb/"),
             esmfold_timeout=float(os.environ.get("ESMFOLD_TIMEOUT", "90")),
             min_length=int(os.environ.get("BINDSITE_MIN_LENGTH", "30")),
-            max_length=int(os.environ.get("BINDSITE_MAX_LENGTH", LOCAL_MAX_LENGTH if local else API_MAX_LENGTH)),
+            max_length=int(os.environ.get("BINDSITE_MAX_LENGTH", LOCAL_MAX_LENGTH)),
             esmif_python=_env_path("BINDSITE_ESMIF_PYTHON", BACKEND_DIR / ".venv-esmif" / _VENV_BIN / _VENV_PY),
             device=os.environ.get("BINDSITE_DEVICE", "").strip().lower(),
             devices=devices,
@@ -78,13 +85,28 @@ class Settings:
             esmfold_attempts=int(os.environ.get("ESMFOLD_ATTEMPTS", "3")),
             esmfold_backoff=float(os.environ.get("ESMFOLD_BACKOFF", "3")),
             esmfold_total_timeout=float(os.environ.get("ESMFOLD_TOTAL_TIMEOUT", "110")),
+            esmfold_files_dir=_env_path("BINDSITE_ESMFOLD_FILES_DIR", weights_dir / "esmfold_files"),
+            esmfold_min_free_gb=float(os.environ.get("BINDSITE_ESMFOLD_MIN_FREE_GB", "10")),
+            baselines_python=_env_path("BINDSITE_BASELINES_PYTHON", BACKEND_DIR / ".venv-baselines" / _VENV_BIN / _VENV_PY),
+            baselines_dir=_env_path("BINDSITE_BASELINES_DIR", REPO_DIR / "baselines_2124"),
+            alphafold_db=os.environ.get("BINDSITE_ALPHAFOLD_DB", "1").strip().lower() not in ("0", "false", "no", "off"),
+            alphafold_db_url=os.environ.get("BINDSITE_ALPHAFOLD_DB_URL", "https://alphafold.ebi.ac.uk"),
+            cors_origins=tuple(o.strip().rstrip("/") for o in os.environ.get("BINDSITE_CORS_ORIGINS", "").split(",")
+                               if o.strip()),
         )
 
     def device_for(self, key: str) -> str:
-        """Device of one model: BINDSITE_DEVICE_<KEY>, else BINDSITE_DEVICE, else cuda when available."""
+        """Device of one model: BINDSITE_DEVICE_<KEY>, else BINDSITE_DEVICE, else cuda when available.
+
+        Self-hosted ESMFold is the GPU fallback of the structure chain: it ignores BINDSITE_DEVICE and stays on
+        cuda unless BINDSITE_DEVICE_ESMFOLD says otherwise (it is then used only when that GPU has room).
+        """
         if key not in DEVICE_KEYS:
             raise KeyError(key)
-        spec = dict(self.devices).get(key) or self.device
+        if key == "esmfold":
+            spec = dict(self.devices).get(key) or "cuda"
+        else:
+            spec = dict(self.devices).get(key) or self.device
         if not spec:
             import torch
 

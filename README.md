@@ -88,6 +88,117 @@ Interactive visualization and benchmark analysis of ligand-class-specific bindin
 
 ## 🚀 快速开始
 
+### Khởi tạo app (FE + BE) trên máy này
+
+**Một lần**, cài môi trường và đặt model vào đúng chỗ (chi tiết từng thư mục: [backend/README.md](backend/README.md)):
+
+```bash
+unzip adabind_*.zip -d adabind                 # model AdaBind (pbind + 140 checkpoint)
+unzip baselines_2124_*.zip -d .                # bindEmbed21DL + bindNode24 (cho chế độ so sánh)
+# foundation_models/: esm2, prot_t5, esm_if1, esmfold_v1 và esmfold_files (4080 cấu trúc có sẵn) — xem backend/README.md
+bash backend/setup_env.sh                      # backend/.venv + .venv-esmif + .venv-baselines
+npm ci --legacy-peer-deps                      # frontend (Node ≥ 22)
+```
+
+**Mỗi lần dùng**, một lệnh cho cả backend lẫn frontend:
+
+```bash
+bash scripts/app.sh start      # build frontend nếu code đổi, bật backend (:8000) + frontend (:4200), chờ model load (~30 s)
+bash scripts/app.sh status     # đang chạy chưa, model trên CPU/GPU, nguồn cấu trúc
+bash scripts/app.sh restart --build
+bash scripts/app.sh stop
+bash scripts/app.sh logs
+```
+
+Mở http://localhost:4200 (VS Code tự forward cổng; nếu không, tab **Ports** → Forward 4200). Hai server chạy tách khỏi
+terminal, đóng VS Code vẫn chạy. Mọi model chạy CPU, kể cả ESMFold (máy này chỉ mượn CPU + 128 GB RAM; `app.sh` giấu hẳn GPU khỏi backend). Frontend là
+bản build có gzip (`scripts/serve_dist.py`) chứ không phải `ng serve`: qua tunnel chậm, bản dev ~17 MB làm trang đen rất lâu.
+VS Code: **Run Task → app: start / app: stop**.
+
+Khi sửa code frontend thì `npm start` (dev, có hot reload) vẫn dùng được trên máy, nhưng phải tắt `scripts/app.sh` trước
+vì cùng cổng 4200.
+
+### Host trang web tĩnh (static), không cần máy chủ AI
+
+```bash
+bash scripts/build_static.sh          # -> dist/static-site/ (23 MB, 713 file), Predict chưa nối ("apiBaseUrl": null)
+```
+
+Đưa **nội dung** của `dist/static-site/` lên bất kỳ host static nào. Explore (346 protein, nhãn thực nghiệm + dự đoán
+đóng băng của 3 model, cấu trúc 3D), Benchmarks và ROC & PR chạy hoàn toàn trong trình duyệt. Đường dẫn nằm sau `#`
+(`/#/explore?dataset=...`), nên F5, link chia sẻ và host trong thư mục con đều chạy. Trang Predict ghi "No AI server"
+và không gửi request nào.
+
+- **Hugging Face static Space** (miễn phí): tạo Space, SDK **Static**, rồi đẩy nội dung `dist/static-site/` lên. Cách dễ
+  nhất là `hf upload <user>/<space> dist/static-site . --repo-type space`, hoặc kéo thả trên web. Gói đã có sẵn
+  `README.md` (cấu hình Space) và `.gitattributes` (file nhị phân `.gz` đi qua LFS nếu đẩy bằng git).
+- GitHub Pages, Cloudflare Pages, Netlify: chép nội dung thư mục đó vào là xong, không cần cấu hình rewrite.
+
+**Nối máy chủ AI sau này**: chỉ sửa `config.json` trên host, không build lại:
+
+```json
+{ "apiBaseUrl": "https://<địa chỉ máy chủ AI>" }
+```
+
+Máy chủ AI phải cho phép trang này gọi sang: chạy backend với `BINDSITE_CORS_ORIGINS=https://<địa chỉ trang static>`.
+Trang static chạy https thì máy chủ AI cũng phải là https, vì trình duyệt chặn gọi http từ trang https. `apiBaseUrl` là
+gốc của backend (`/predict`, `/health` nối vào sau); `"/api"` là mặc định khi trang và backend chung một máy chủ
+(`scripts/app.sh`, Docker).
+
+### Docker: một image chứa toàn bộ app
+
+Image gồm trang web đã build, backend, AdaBind (`adabind/`: pbind, final_model, golden set), bindEmbed21DL + bindNode24
+cùng kết quả đóng băng (`baselines_2124/`), dữ liệu Explore và toàn bộ `foundation_models/` (ESM-2, ProtT5, ESM-IF1,
+ESMFold v1, 4036 cấu trúc có sẵn). Ba môi trường Python được dựng lại bên trong, bản torch CPU, đúng phiên bản các gói
+đã kiểm chứng trên máy này (`docker/constraints-*.txt`). Máy build cần có sẵn ba thư mục model kể trên vì chúng không nằm
+trong git.
+
+```bash
+docker build -t bindsite:latest .     # lần đầu ~20 phút; sửa code thì chỉ build lại vài layer cuối
+docker run -d --name bindsite -p 8080:8080 --restart unless-stopped bindsite:latest
+docker logs -f bindsite               # Predict dùng được khi thấy "Self-test passed: golden ..." (~45 s);
+                                      # "Local ESMFold ready" (vài phút sau) là ESMFold CPU đã nạp
+```
+
+Mở http://localhost:8080 (đổi cổng ngoài bằng `-p <cổng>:8080`). `-p 8080:8080` mở cổng ra mọi mạng của máy; chỉ xem trên
+máy đó thì dùng `-p 127.0.0.1:8080:8080`. Trong container, backend chỉ nghe 127.0.0.1:8000 và trang web gọi nó qua `/api`.
+Mọi thứ chạy CPU, kể cả ESMFold: cấu trúc lấy từ bộ có sẵn → ESM Atlas API → ESMFold trên CPU (chạy nền, trang tự chờ)
+→ người dùng upload PDB. Chuyển image sang máy khác: `docker save bindsite:latest | gzip > bindsite.tar.gz`, rồi bên kia
+`docker load -i bindsite.tar.gz`.
+
+Đo trên máy này (08/11/2026, Docker 29.9.3):
+
+| | |
+|---|---|
+| Image | 14,5 GB nén; Docker chiếm 35,3 GB đĩa (giữ cả bản nén lẫn bản giải nén) |
+| RAM | ~22 GB khi mọi model đã nạp, ESMFold chiếm ~14 GB trong đó; lúc fold thêm vài GB. Nên cho ≥ 32 GB |
+| ESMFold CPU, API tắt, chuỗi 40 aa chưa từng fold | 202 ngay, trang tự hỏi lại, có kết quả sau ~20 s (fold 12 s) |
+| Self-test golden set | đạt, sai lệch giống hệt bản chạy trên máy (metal 2,4e-04, nuclear 2,9e-04, small 4,5e-04) |
+| `/predict`, 8 protein (34–813 aa) × 4 ligand | trùng từng bit với bản chạy trên máy, 0/7864 residue đổi kết luận |
+| `/compare` (bindEmbed21DL, bindNode24 trên AlphaFold DB) | trùng từng bit |
+| `verify_baselines.py --split TestSetNew46` | PASS, số giống hệt bản chạy trên máy |
+| `pytest` trong container | 155 đạt, 1 bỏ qua |
+| Chạy như Hugging Face (`--user 1000`, `BINDSITE_ESMFOLD_LOCAL=off`) | `/predict` và `/compare` trùng từng bit; ~7,6 GB RAM |
+
+#### Lên Docker Hub rồi Hugging Face
+
+```bash
+docker login -u <dockerhub-user>                       # mật khẩu: access token tạo ở Docker Hub
+docker tag bindsite:latest <dockerhub-user>/bindsite:latest
+docker push <dockerhub-user>/bindsite:latest           # ~14,5 GB
+```
+
+Repo trên Docker Hub phải **public** thì Space mới kéo được, nghĩa là ai cũng tải được toàn bộ image, kể cả checkpoint
+AdaBind. Trên Hugging Face: tạo Space với SDK **Docker** (cần gói PRO), rồi đẩy lên Space hai file trong
+`deploy/huggingface/` (`README.md` có `app_port: 8080`, `Dockerfile` chỉ có `FROM <dockerhub-user>/bindsite:latest`),
+sau khi thay `<dockerhub-user>`. Space tự build và chạy.
+
+- Phần cứng: CPU Basic (2 vCPU, 16 GB, miễn phí) đủ khi tắt ESMFold, như `deploy/huggingface/Dockerfile` đang làm.
+  Muốn bật ESMFold thì cần CPU Upgrade (8 vCPU, 32 GB, $0,03/giờ) và xoá dòng `BINDSITE_ESMFOLD_LOCAL=off`; fold trên
+  vài vCPU rất chậm.
+- Space chạy container bằng user 1000: image đã cho mọi file đọc được và đặt `HOME=/app/home`.
+- Ổ đĩa của Space không giữ lại khi restart: cache cấu trúc và AlphaFold DB mất sau mỗi lần khởi động lại.
+
 ### 安装依赖
 ```bash
 npm install
@@ -100,16 +211,18 @@ npm start
 
 访问 http://localhost:4200
 
+### Trang Explore (so sánh model, không cần backend)
+
+So sánh AdaBind, bindEmbed21DL và bindNode24 với nhãn thực nghiệm trên TestSet300 và TestSetNew46, theo 4 nhãn ligand:
+metal, small molecule, DNA, RNA. Mỗi tập mở sẵn protein AdaBind đúng nhất (MCC cao nhất, hoà thì lấy site lớn nhất).
+Dữ liệu là file tĩnh trong `public/explore-data` (346 protein, ~17 MB). Cách dựng lại:
+xem [backend/README.md](backend/README.md#dữ-liệu-trang-explore).
+
 ### Trang Predict (dự đoán thật bằng model adabind)
 
-Cần backend Python chạy ở cổng 8000 (dev server proxy `/api` sang đó):
-
-```bash
-bash backend/setup_env.sh        # một lần: .venv + .venv-esmif
-cd backend && .venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
-```
-
-Rồi mở http://127.0.0.1:4200/predict. Chi tiết (ESMFold local / API, chọn GPU/CPU cho từng model, kiểm tra):
+Cần backend (`bash scripts/app.sh start` bật cả hai). Mở http://localhost:4200/predict. Cấu trúc 3D lấy theo thứ tự: cấu trúc có sẵn → ESM Atlas API → ESMFold local
+trên CPU (chạy nền, vài phút đến hơn một giờ tuỳ độ dài; trang tự chờ) → người dùng tự fold rồi upload PDB. Sau khi có kết quả có thể chọn so sánh với bindEmbed21DL và
+bindNode24 (cần `bash backend/setup_env.sh --only baselines`). Chi tiết, và model nào cần tải:
 [backend/README.md](backend/README.md).
 
 ### 构建生产版本

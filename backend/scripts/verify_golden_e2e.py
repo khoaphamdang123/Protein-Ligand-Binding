@@ -1,6 +1,7 @@
 """End-to-end check from the sequence alone, on every golden protein, exactly as a /predict request runs:
 
-    structure  ESMFold (self-hosted first, API fallback), folded fresh (temporary cache, nothing reused)
+    structure  folded fresh, in the order of /predict but without the precomputed structures and with a temporary
+               cache: ESMFold API, then self-hosted ESMFold on a GPU with room
     embeddings ESM-2 / ProtT5 (this environment) + ESM-IF (backend/.venv-esmif worker)
     models     the 140 checkpoints of adabind/final_model
 
@@ -26,7 +27,7 @@ from app import model_files  # noqa: E402
 from app.config import BINDING_TYPES, Settings, apply_offline_environment  # noqa: E402
 from app.errors import ApiError  # noqa: E402
 from app.esmfold import EsmFoldClient  # noqa: E402
-from app.esmfold_local import LocalEsmFold, ca_coords, kabsch_rmsd  # noqa: E402
+from app.esmfold_local import LocalEsmFold, LocalFoldService, ca_coords, kabsch_rmsd  # noqa: E402
 from app.predictor import create_predictor  # noqa: E402
 
 TOL_E2E_MAX, TOL_E2E_FLIPS = 0.03, 0.01
@@ -43,8 +44,9 @@ def main() -> int:
     manifest, _ = model_files.load_manifest(settings.final_model_dir)
     thr = model_files.thresholds(manifest, settings.profile)
 
-    local = None if a.api_only or settings.esmfold_local != "auto" else \
-        LocalEsmFold(settings.esmfold_dir, device=settings.device_for("esmfold"))
+    local = None if a.api_only or settings.esmfold_local != "auto" else LocalFoldService(
+        LocalEsmFold(settings.esmfold_dir, device=settings.device_for("esmfold")), settings.golden_dir,
+        settings.esmfold_min_free_gb, explicit_cpu=dict(settings.devices).get("esmfold") == "cpu")
     predictor, status = create_predictor(settings)
     if status["status"] != "ok":
         print("predictor:", status["message"])

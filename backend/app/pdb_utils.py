@@ -39,3 +39,23 @@ def read_chain(pdb_text: str, chain_id: str = "A") -> ChainResidues:
         sequence="".join(THREE_TO_ONE.get(names[key], "?") for key in order),
         plddt=[bfactors[key] for key in order],
     )
+
+
+def superpose(pdb_text: str, mobile_ca, target_ca) -> tuple[str, float]:
+    """Move every atom of `pdb_text` by the rigid motion that puts `mobile_ca` on `target_ca` (Kabsch, same residues in
+    the same order). Distances inside the structure do not change. Returns (moved PDB text, Cα RMSD after the move)."""
+    import numpy as np
+
+    p, q = np.asarray(mobile_ca, float), np.asarray(target_ca, float)
+    pc, qc = p.mean(0), q.mean(0)
+    u, _, vt = np.linalg.svd((p - pc).T @ (q - qc))
+    d = np.sign(np.linalg.det(u @ vt))
+    rot = u @ np.diag([1.0, 1.0, d]) @ vt
+    rmsd = float(np.sqrt((((p - pc) @ rot - (q - qc)) ** 2).sum(1).mean()))
+    out = []
+    for line in pdb_text.splitlines():
+        if line.startswith(("ATOM", "HETATM")) and len(line) >= 54:
+            xyz = (np.array([float(line[30:38]), float(line[38:46]), float(line[46:54])]) - pc) @ rot + qc
+            line = f"{line[:30]}{xyz[0]:8.3f}{xyz[1]:8.3f}{xyz[2]:8.3f}{line[54:]}"
+        out.append(line)
+    return "\n".join(out) + "\n", rmsd

@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import model_files  # noqa: E402
 from app.config import BINDING_TYPES, Settings, apply_offline_environment  # noqa: E402
-from app.esmfold import EsmFoldClient  # noqa: E402
+from app.esmfold import EsmFoldClient, PrecomputedStructures  # noqa: E402
 
 TEST_SEQUENCE = "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"  # ubiquitin
 
@@ -114,10 +114,20 @@ def check_esmfold(settings: Settings):
                   + (" (cached)" if fold.cached else f", {fold.seconds:.1f} s")), details
 
 
+def check_precomputed(settings: Settings):
+    pre = PrecomputedStructures(settings.esmfold_files_dir, settings.cache_dir / "esmfold_files_index.json")
+    pre.start(background=False)
+    return pre.status["status"], pre.status["message"], {"count": pre.count}
+
+
 def check_local_esmfold(settings: Settings):
-    from app.esmfold_local import LocalEsmFold, self_test
+    from app.esmfold_local import LocalEsmFold, LocalFoldService, self_test
 
     local = LocalEsmFold(settings.esmfold_dir, device=settings.device_for("esmfold"))
+    room, why = LocalFoldService(local, min_free_gb=settings.esmfold_min_free_gb,
+                                 explicit_cpu=dict(settings.devices).get("esmfold") == "cpu")._has_room()
+    if not room:  # the GPU is shared: never load next to another job that would run out of memory
+        return "warning", f"not checked: {why}", {}
     result = self_test(local, settings.golden_dir)
     status = "ok" if result["ok"] else "error"
     local._model = None  # free the 8.4 GB before the binding-site models load
@@ -158,7 +168,8 @@ def main() -> int:
     report.run("Python packages + GPU", check_packages)
     report.run("final_model checksums", check_final_model, settings)
     report.run("Foundation weight files", check_weights, settings, args.full_hash)
-    esmfold = report.run("ESMFold API (fallback)", check_esmfold, settings)
+    report.run("Precomputed ESMFold structures", check_precomputed, settings)
+    esmfold = report.run("ESMFold API", check_esmfold, settings)
     if not args.skip_models and settings.esmfold_local == "auto":
         report.run("ESMFold self-hosted (golden fold)", check_local_esmfold, settings)
     if not args.skip_models:

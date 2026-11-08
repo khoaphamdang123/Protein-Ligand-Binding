@@ -26,11 +26,12 @@ export const STATUS_LABELS: Record<ResidueStatus, string> = {
   TN: 'True Negative',
 };
 
-/** Ligand-class colours: the paper evaluates three branches (metal / nucleic / small). */
+/** Ligand-class colours. */
 export const LIGAND_CLASS_COLORS: Record<LigandClass, string> = {
   metal: '#22D3EE',
-  nuclear: '#A78BFA',
   small: '#F59E0B',
+  dna: '#A78BFA',
+  rna: '#F472B6',
 };
 
 export function statusColor(status: ResidueStatus): string {

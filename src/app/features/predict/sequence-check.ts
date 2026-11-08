@@ -10,6 +10,18 @@ export interface SequenceCheck {
   error: string | null;
 }
 
+/** UniProt accession from a FASTA header (">sp|P0CG48|UBIQ_HUMAN ...", ">P06956 ..."), or null. */
+export function headerAccession(raw: string): string | null {
+  const header = raw.trimStart().split(/\r\n|\r|\n/, 1)[0];
+  if (!header.startsWith('>')) {
+    return null;
+  }
+  const match = header.match(/^>\s*(?:(?:sp|tr)\|)?([A-Z0-9]{6,10})(?=[|\s]|$)/i);
+  const id = match?.[1].toUpperCase() ?? '';
+  // UniProt accession format (uniprot.org/help/accession_numbers)
+  return /^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$/.test(id) ? id : null;
+}
+
 export function checkSequence(raw: string, minLength: number, maxLength: number): SequenceCheck {
   if (!raw.trim()) {
     return { sequence: '', error: null };

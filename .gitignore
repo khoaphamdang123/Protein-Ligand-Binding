@@ -17,6 +17,17 @@ yarn-error.log
 /foundation_models
 /adabind
 /adabind_*.zip
+/baselines_2124
+/baselines_*.zip
+/explore_sources
+/*.zip
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Explore data: public/explore-data is committed (the app serves it); only the build's temp dir is not
+/public/explore-data.tmp
 
 # Backend (Python)
 /backend/.venv
@@ -25,7 +36,22 @@ yarn-error.log
 /backend/cache
 /backend/logs
 __pycache__/
+*.py[cod]
+*.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
 
 # IDEs and editors
 .idea/
@@ -46,7 +72,7 @@ __pycache__/
 .history/*
 
 # Miscellaneous
-/.angular/cache
+/.angular
 .sass-cache/
 /connect.lock
 /coverage
@@ -55,9 +81,11 @@ testem.log
 /typings
 __screenshots__/
 
-# System files
+# System and editor temp files
 .DS_Store
 Thumbs.db
+*.swp
+*~
 
 # Documentation and Fix Reports (exclude from version control)
 # Keep only README.md, ARCHITECTURE.md, and PROJECT_SUMMARY.md
@@ -78,3 +106,6 @@ TOGGLE_*.md
 ZOOM_*.md
 REALTIME_*.md
 FULLSCREEN_*.md
+
+# scripts/app.sh pid files
+/.run

@@ -14,12 +14,40 @@ import { Expression } from 'molstar/lib/mol-script/language/expression';
 import { MolScriptBuilder as MS } from 'molstar/lib/mol-script/language/builder';
 import { StructureSelectionQuery } from 'molstar/lib/mol-plugin-state/helpers/structure-selection-query';
 import { PluginCommands } from 'molstar/lib/mol-plugin/commands';
+import { Camera } from 'molstar/lib/mol-canvas3d/camera';
 import { ErrorReporterService, describeError } from '../../core/services/error-reporter.service';
 import { hexToInt, plddtColor, probabilityColor, STATUS_COLORS } from '../../core/utils/prediction-colors';
 import { ResidueStatus } from '../../core/models/explore.model';
 
-export type PredictionColorMode = 'rainbow' | 'probability' | 'plddt' | 'chain';
+export type PredictionColorMode = 'outcome' | 'probability' | 'plddt' | 'rainbow';
 export type FocusMode = 'ground-truth' | 'predicted';
+
+/** Neutral cartoon of the 'outcome' mode, so that only the TP / FP / FN sticks carry colour. */
+const OUTCOME_CARTOON = 0xa9b4c2;
+const DEFAULT_SITE_COLOR = '#22D3EE';
+
+/**
+ * Keeps several viewers of the same structure on one camera. The viewer under the pointer leads: the others copy
+ * its camera after each frame it draws.
+ */
+export class CameraLink {
+  enabled = true;
+  private viewers = new Set<PredictionViewerComponent>();
+
+  join(viewer: PredictionViewerComponent): void {
+    this.viewers.add(viewer);
+  }
+
+  leave(viewer: PredictionViewerComponent): void {
+    this.viewers.delete(viewer);
+  }
+
+  publish(source: PredictionViewerComponent, snapshot: Camera.Snapshot): void {
+    if (this.enabled) {
+      this.viewers.forEach(v => { if (v !== source) v.applyCamera(snapshot); });
+    }
+  }
+}
 
 /**
  * Mol* (Molstar) based 3D structure viewer, drop-in replacement for the former
@@ -135,6 +163,8 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
   @Input() errorsOnly = false;
   @Input() ligandClassColor: string | null = null;
   @Input() ligandClassLabel: string | null = null;
+  @Input() cameraLink: CameraLink | null = null;
+  @Input() predictedColor: string | null = null;   // sticks on called residues when there is no ground truth
   @Output() residueSelect = new EventEmitter<number>();
   @Output() residueHover = new EventEmitter<number | null>();
 
@@ -152,6 +182,18 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
   private resizeObserver: ResizeObserver | null = null;
   private themeObserver: MutationObserver | null = null;
   private loadToken = 0;
+  private pointerInside = false;
+  private lastCamera = '';
+  private cameraSub: { unsubscribe(): void } | null = null;
+  private readonly onPointerEnter = () => { this.pointerInside = true; };
+  private readonly onPointerLeave = () => { this.pointerInside = false; };
+  private readonly onPointerMove = (e: PointerEvent) => {
+    // Next to the pointer, on the side where the tooltip stays inside the viewer.
+    const box = this.container.nativeElement.getBoundingClientRect();
+    const x = e.clientX - box.left;
+    const y = e.clientY - box.top;
+    this.tooltipPos.set({ x: x > box.width - 230 ? x - 240 : x, y: y > box.height - 190 ? y - 180 : y });
+  };
 
   hoverInfo = computed(() => {
     const i = this.hoverIndex();
@@ -193,6 +235,9 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
 
         this.resizeObserver = new ResizeObserver(() => this.plugin?.handleResize());
         this.resizeObserver.observe(this.container.nativeElement);
+        this.container.nativeElement.addEventListener('pointermove', this.onPointerMove);
+
+        this.linkCamera();
       });
     } catch (err) {
       this.fail('Cannot initialise the 3D viewer (WebGL unavailable?)', err);
@@ -203,18 +248,24 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
 
   ngOnChanges(changes: SimpleChanges): void {
     if (!this.plugin) return;
-    if (changes['selectedIndex']) {
-      this.selectResidue();
-    } else if (
+    // Scene inputs first: a protein change usually clears the selection in the same pass, and load() re-applies it.
+    if (
       changes['pdb'] || changes['colorMode'] || changes['probability'] || changes['binding'] ||
       changes['plddt'] || changes['groundTruth'] || changes['status'] || changes['showGroundTruth'] ||
-      changes['showPredicted'] || changes['errorsOnly'] || changes['ligandClassColor']
+      changes['showPredicted'] || changes['errorsOnly'] || changes['ligandClassColor'] || changes['predictedColor']
     ) {
       this.load();
+    } else if (changes['selectedIndex']) {
+      this.selectResidue();
     }
   }
 
   ngOnDestroy(): void {
+    this.cameraLink?.leave(this);
+    this.cameraSub?.unsubscribe();
+    this.container.nativeElement.removeEventListener('pointermove', this.onPointerMove);
+    this.container.nativeElement.removeEventListener('pointerenter', this.onPointerEnter);
+    this.container.nativeElement.removeEventListener('pointerleave', this.onPointerLeave);
     this.resizeObserver?.disconnect();
     this.themeObserver?.disconnect();
     this.plugin?.dispose();
@@ -228,6 +279,40 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
     const indices = source.flatMap((b, i) => (b ? [i + 1] : []));
     if (!indices.length) return;
     this.focusResidues(indices);
+  }
+
+  /** Back to the whole structure. */
+  resetView(): void {
+    if (this.plugin) {
+      this.zone.runOutsideAngular(() => this.plugin?.managers.camera.reset(undefined, 300));
+    }
+  }
+
+  /** Another viewer of the same structure moved (see CameraLink). */
+  applyCamera(snapshot: Camera.Snapshot): void {
+    const camera = this.plugin?.canvas3d?.camera;
+    if (camera) {
+      this.lastCamera = cameraKey(snapshot);
+      camera.setState(snapshot, 0);
+    }
+  }
+
+  private linkCamera(): void {
+    const canvas = this.plugin?.canvas3d;
+    if (!canvas || !this.cameraLink) return;
+    this.cameraLink.join(this);
+    const element = this.container.nativeElement;
+    element.addEventListener('pointerenter', this.onPointerEnter);
+    element.addEventListener('pointerleave', this.onPointerLeave);
+    this.cameraSub = canvas.didDraw.subscribe(() => {
+      if (!this.pointerInside) return;
+      const snapshot = canvas.camera.getSnapshot();
+      const key = cameraKey(snapshot);
+      if (key !== this.lastCamera) {
+        this.lastCamera = key;
+        this.cameraLink?.publish(this, snapshot);
+      }
+    });
   }
 
   /** Export a high-resolution PNG snapshot at the requested scale (1x/2x/4x). */
@@ -320,7 +405,7 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
 
         if (this.showGroundTruth && this.groundTruth.length) {
           const gt = this.groundTruth.flatMap((b, i) => (b ? [i + 1] : []));
-          if (gt.length) await this.addHighlight('ground-truth', gt, hexToInt(this.ligandClassColor ?? '#22D3EE'));
+          if (gt.length) await this.addHighlight('ground-truth', gt, hexToInt(this.ligandClassColor ?? DEFAULT_SITE_COLOR));
         }
 
         if (this.showPredicted && this.status.length) {
@@ -332,6 +417,9 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
             const indices = this.status.flatMap((st, i) => (st === s ? [i + 1] : []));
             if (indices.length) await this.addHighlight(`status-${s}`, indices, hexToInt(STATUS_COLORS[s]));
           }
+        } else if (this.showPredicted && this.predictedColor) {
+          const called = this.binding.flatMap((b, i) => (b ? [i + 1] : []));
+          if (called.length) await this.addHighlight('predicted', called, hexToInt(this.predictedColor));
         }
 
         plugin.managers.camera.reset(undefined, 0);
@@ -350,8 +438,8 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
     const n = Math.max(this.sequence.length, values.length, 1);
     if (this.colorMode === 'rainbow') {
       this.colorFn = (seqId) => rainbowColor(seqId - 1, n);
-    } else if (this.colorMode === 'chain') {
-      this.colorFn = () => 0x22d3ee;
+    } else if (this.colorMode === 'outcome') {
+      this.colorFn = () => OUTCOME_CARTOON;
     } else {
       const colorOf = this.colorMode === 'plddt' ? plddtColor : probabilityColor;
       const colors = values.map((v) => hexToInt(colorOf(v)));
@@ -361,8 +449,7 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
 
   private async addCartoon(): Promise<void> {
     if (!this.plugin || !this.structure) return;
-    const color: any =
-      this.colorMode === 'chain' ? 'chain-id' : ('prediction-residue-color' as unknown as ColorTheme.BuiltIn);
+    const color = 'prediction-residue-color' as unknown as ColorTheme.BuiltIn;
     await this.plugin.builders.structure.representation.addRepresentation(this.structure, {
       type: 'cartoon',
       typeParams: {},
@@ -486,6 +573,10 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
     });
     this.reporter.report('error', detail, 'prediction-viewer', err, { pdbLength: this.pdb?.length ?? 0 });
   }
+}
+
+function cameraKey(s: Camera.Snapshot): string {
+  return [...s.position, ...s.target, ...s.up, s.radius].map(v => v.toFixed(4)).join(',');
 }
 
 const RAINBOW_STOPS = ['#E53935', '#FB8C00', '#FDD835', '#43A047', '#00ACC1', '#1E5AA8', '#7E57C2'];

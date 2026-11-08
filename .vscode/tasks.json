@@ -43,7 +43,7 @@
       "type": "shell",
       "command": "${workspaceFolder}/backend/.venv/bin/python",
       "args": ["-m", "uvicorn", "app.main:create_app", "--factory", "--host", "127.0.0.1", "--port", "8000"],
-      "options": { "cwd": "${workspaceFolder}/backend" },
+      "options": { "cwd": "${workspaceFolder}/backend", "env": { "BINDSITE_DEVICE": "cpu", "BINDSITE_DEVICE_ESMFOLD": "cpu" } },
       "isBackground": true,
       "problemMatcher": {
         "owner": "python",
@@ -54,6 +54,25 @@
           "endsPattern": "Application startup complete|Uvicorn running on"
         }
       }
+    },
+    {
+      "label": "app: start",
+      "detail": "backend + built frontend, detached (scripts/app.sh)",
+      "type": "shell",
+      "command": "bash ${workspaceFolder}/scripts/app.sh start",
+      "problemMatcher": []
+    },
+    {
+      "label": "app: stop",
+      "type": "shell",
+      "command": "bash ${workspaceFolder}/scripts/app.sh stop",
+      "problemMatcher": []
+    },
+    {
+      "label": "app: status",
+      "type": "shell",
+      "command": "bash ${workspaceFolder}/scripts/app.sh status",
+      "problemMatcher": []
     },
     {
       "label": "dev: backend + frontend",

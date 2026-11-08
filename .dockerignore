@@ -1,0 +1,21 @@
+# Only what the Dockerfile copies is needed; the Python environments are rebuilt inside the image.
+.git
+.angular
+.vscode
+.run
+node_modules
+dist
+tmp
+out-tsc
+coverage
+explore_sources
+*.zip
+**/__pycache__
+**/.pytest_cache
+**/.ipynb_checkpoints
+backend/.venv
+backend/.venv-*
+backend/cache
+backend/logs
+adabind/pbind.egg-info
+foundation_models/torch_home

@@ -1,10 +1,10 @@
 import { ErrorHandler, Injectable, inject } from '@angular/core';
-import { API_BASE_URL } from './prediction-api.service';
+import { AppConfigService } from './app-config.service';
 
 export type ClientLogLevel = 'error' | 'warning' | 'info';
 
 /**
- * Sends browser-side errors to the backend log (POST /api/client-log), so every failure -
+ * Sends browser-side errors to the backend log (POST <apiBaseUrl>/client-log), so every failure -
  * backend or UI - ends up in backend/logs/backend.log. Best effort: never throws.
  */
 @Injectable({
@@ -12,6 +12,7 @@ export type ClientLogLevel = 'error' | 'warning' | 'info';
 })
 export class ErrorReporterService {
   private static readonly MAX_REPORTS = 100;   // per page load, against error loops
+  private config = inject(AppConfigService);
   private sent = 0;
   private lastKey = '';
 
@@ -23,10 +24,14 @@ export class ErrorReporterService {
     this.lastKey = key;
     this.sent++;
 
+    const api = this.config.apiBaseUrl;
+    if (api === null) {
+      return;   // static hosting without an AI server: the error stays in the browser console
+    }
     const stack = error instanceof Error ? error.stack : undefined;
     const body = JSON.stringify({ level, message, source, url: location.href, stack, context });
     try {
-      fetch(`${API_BASE_URL}/client-log`, {
+      fetch(`${api}/client-log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,

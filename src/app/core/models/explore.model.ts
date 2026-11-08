@@ -1,72 +1,81 @@
-import { DatasetType } from './dataset.model';
-import { PredictionMethod } from './method.model';
 import { LigandClass } from './prediction.model';
 
 /**
- * A protein entry in the Explore browser.
- * Structures are ESMFold *predictions* (no experimental resolution), so we
- * carry pLDDT per residue instead of a resolution value.
+ * Static data of the Explore page: public/explore-data, built and checked against the published numbers by
+ * backend/scripts/explore_data/build.py.
  */
-export interface ExploreProtein {
-  id: string;
-  uniprotId: string;
-  pdbId: string;
-  name: string;
-  length: number;
-  sequence: string;
-  bindingType: LigandClass;
-  dataset: DatasetType;
-  source: 'ESMFold';
-}
 
 export type ResidueStatus = 'TP' | 'TN' | 'FP' | 'FN';
 
-export interface ExploreResidue {
-  position: number; // 1-based
-  aminoAcid: string;
-  probability: number; // prediction score 0-1
-  predicted: boolean; // probability >= threshold
-  groundTruth: boolean; // experimental binding
-  status: ResidueStatus;
-  plddt: number; // 0-1
-}
+export type DatasetId = 'TestSet300' | 'TestSetNew46';
+export type ModelId = 'adabind' | 'bindEmbed21DL' | 'bindNode24';
+
+/** Display order: the project's model first. */
+export const MODEL_IDS: ModelId[] = ['adabind', 'bindEmbed21DL', 'bindNode24'];
 
 export interface ExploreMetrics {
+  AUPRC: number;
+  AUROC: number;
   precision: number;
   recall: number;
-  f1: number;
-  mcc: number;
-  accuracy: number;
-  tp: number;
-  fp: number;
-  tn: number;
-  fn: number;
+  F1: number;
+  MCC: number;
+  TP: number;
+  FP: number;
+  TN: number;
+  FN: number;
 }
 
-/**
- * Everything the viewer + sequence track need for one protein + method.
- * Mirror of the PredictResult shape (predict page) plus ground truth, so the
- * Explore page can reuse the same prediction-viewer / probability-track stack.
- */
-export interface ExploreResult {
-  protein: ExploreProtein;
-  method: PredictionMethod;
+export interface DatasetMetrics extends ExploreMetrics {
   threshold: number;
-  probability: number[];
-  binding: boolean[]; // predicted (probability >= threshold)
-  groundTruth: boolean[]; // experimental binding
-  status: ResidueStatus[];
-  plddt: number[];
-  pdb: string;
-  residues: ExploreResidue[];
-  metrics: ExploreMetrics;
+  n_residues: number;
+  n_positive: number;
 }
 
-export type ExploreDatasetFilter = DatasetType | 'all';
+/** One protein in the picker. `ligands` holds only the classes it has a site for, with the number of residues. */
+export interface ProteinRow {
+  id: string;
+  split: DatasetId;
+  length: number;
+  name: string | null;       // null: no name found, the sequence is shown instead
+  nameSource: string;
+  nameNote: string | null;
+  gene: string | null;
+  organism: string | null;
+  sequence: string;
+  ligands: Partial<Record<LigandClass, number>>;
+}
 
-export interface ExploreFilters {
-  dataset: ExploreDatasetFilter;
-  method: PredictionMethod;
-  bindingType: LigandClass | 'all';
-  searchQuery: string;
+export interface ExploreIndex {
+  generated: string;
+  checks_passed: number;
+  datasets: { id: DatasetId; label: string; proteins: number; description: string }[];
+  ligands: Record<LigandClass, { label: string; baselineOutput: string }>;
+  models: Record<ModelId, { label: string; thresholds: Record<LigandClass, number>; note: string }>;
+  notes: { thresholds: string; dnaRna: string; labels: string; structure: string };
+  summary: Record<DatasetId, Record<LigandClass, { n_proteins_with_site: number; models: Record<ModelId, DatasetMetrics> }>>;
+  /** What each test set opens on: AdaBind's highest MCC, the larger site on ties. */
+  featured: Record<DatasetId, { protein: string; ligand: LigandClass; MCC: number; TP: number; FP: number; FN: number }>;
+  proteins: ProteinRow[];
+}
+
+/** One model on one protein: per ligand class, probabilities, calls ('0101...') and metrics (full precision). */
+export interface ProteinModelData {
+  prob: Record<LigandClass, number[]>;
+  call: Record<LigandClass, string>;
+  metrics: Partial<Record<LigandClass, ExploreMetrics>>;
+}
+
+export interface ProteinDoc {
+  id: string;
+  split: DatasetId;
+  sequence: string;
+  plddt: number[];
+  labels: Record<LigandClass, string>;   // ground truth, '0101...'
+  models: Record<ModelId, ProteinModelData>;
+}
+
+export interface LoadedProtein {
+  doc: ProteinDoc;
+  pdb: string;
 }

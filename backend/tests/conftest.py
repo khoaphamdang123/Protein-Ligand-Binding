@@ -123,6 +123,72 @@ def golden_protein():
             dict(np.load(GOLDEN_DIR / f"{entry['prot_id']}.npz")))
 
 
+def ca_only_pdb(sequence: str, plddt: float = 0.9) -> str:
+    """Minimal chain-A PDB (one CA per residue) whose sequence is `sequence`."""
+    three = {v: k for k, v in {"ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C", "GLN": "Q", "GLU": "E",
+                                "GLY": "G", "HIS": "H", "ILE": "I", "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F",
+                                "PRO": "P", "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V"}.items()}
+    lines = [f"ATOM  {i:5d}  CA  {three[aa]} A{i:4d}    {i * 3.8:8.3f}{0.0:8.3f}{0.0:8.3f}  1.00{plddt:6.2f}           C"
+             for i, aa in enumerate(sequence, 1)]
+    return "\n".join(lines + ["TER", "END"]) + "\n"
+
+
+class FakeBaselineWorker:
+    """Stands in for app.baselines.BaselineWorker: columns metal 0.9, nuclear 0.2, small 0.6 unless told otherwise."""
+
+    def __init__(self, problem: str | None = None, error: Exception | None = None):
+        self.problem = problem
+        self.error = error
+        self.calls: list[tuple] = []
+        self.cas: list[np.ndarray] = []
+        self.closed = False
+
+    def missing(self) -> str | None:
+        return self.problem
+
+    def predict(self, embedding: np.ndarray, ca: np.ndarray) -> dict:
+        self.calls.append((embedding.shape, ca.shape))
+        self.cas.append(np.asarray(ca))
+        if self.error:
+            raise self.error
+        row = np.array([0.9, 0.2, 0.6])
+        return {"bindEmbed21DL": np.tile(row, (len(ca), 1)), "bindNode24": np.tile(row[::-1], (len(ca), 1))}
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeLocalFold:
+    """Stands in for app.esmfold_local.LocalFoldService: ready() answers (ok, reason); fold() uses a callable."""
+
+    def __init__(self, fold=None, ready: tuple[bool, str] = (True, ""), device: str = "cuda"):
+        self._fold = fold
+        self._ready = ready
+        self.device = device
+        self.calls: list[str] = []
+        self.ready_calls = 0
+
+    @property
+    def background(self) -> bool:  # as LocalFoldService: CPU folds are queued
+        return not self.device.startswith("cuda")
+
+    def can_queue(self) -> tuple[bool, str]:
+        return self._ready
+
+    def ready(self) -> tuple[bool, str]:
+        self.ready_calls += 1
+        return self._ready
+
+    def status(self) -> dict:
+        ok, why = self._ready
+        return {"status": "ok" if ok else "warning", "state": "ready" if ok else "unavailable",
+                "message": why or "ready", "device": self.device}
+
+    def fold(self, sequence: str) -> str:
+        self.calls.append(sequence)
+        return self._fold(sequence)
+
+
 class FakeLocalEsmFold:
     """Stands in for app.esmfold_local.LocalEsmFold: folds with a callable, records calls."""
 
@@ -141,3 +207,49 @@ class FakeLocalEsmFold:
     def fold(self, sequence: str) -> str:
         self.calls.append(sequence)
         return self._fold(sequence)
+
+
+def moved_pdb(pdb_text: str, plddt_scale: float = 100.0) -> str:
+    """The same structure turned 90 degrees and shifted, pLDDT on a 0-100 scale: an AlphaFold DB file of it."""
+    out = []
+    for line in pdb_text.splitlines():
+        if line.startswith("ATOM"):
+            x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
+            b = float(line[60:66]) * plddt_scale
+            line = f"{line[:30]}{-y + 10:8.3f}{x - 5:8.3f}{z + 2:8.3f}{line[54:60]}{b:6.2f}{line[66:]}"
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
+class FakeAlphaFoldDB:
+    """httpx transport standing in for alphafold.ebi.ac.uk; knows the sequences in `models` ({sequence: pdb text})."""
+
+    def __init__(self, models: dict[str, str] | None = None, status: int | None = None):
+        self.models = models or {}
+        self.status = status
+        self.calls: list[str] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.calls.append(request.url.path)
+        if self.status:
+            return httpx.Response(self.status, text="down")
+        if request.url.path.endswith("/sequence/summary"):
+            seq = request.url.params["id"]
+            if seq not in self.models:
+                return httpx.Response(404, json={"message": "No results found"})
+            other = {"provider": "AlphaFold DB", "model_identifier": "AF-0000000066011125", "created": "2026-02-19",
+                     "sequence_identity": 1.0, "coverage": 1.0,
+                     "model_url": "https://alphafold.test/files/AF-0000000066011125-model_v1.cif"}
+            uniprot = {"provider": "AlphaFold DB", "model_identifier": "AF-P0CG48-F1", "created": "2022-06-01",
+                       "sequence_identity": 1.0, "coverage": 1.0, "model_page_url": "https://alphafold.test/entry/AF-P0CG48-F1",
+                       "model_url": "https://alphafold.test/files/AF-P0CG48-F1-model_v6.cif"}
+            own = {**uniprot, "model_identifier": "AF-Q99999-F1", "created": "2025-08-01",
+                   "model_url": "https://alphafold.test/files/AF-Q99999-F1-model_v6.cif"}
+            return httpx.Response(200, json={"structures": [{"summary": other}, {"summary": own}, {"summary": uniprot}]})
+        if request.url.path.endswith(".pdb"):
+            return httpx.Response(200, text=next(iter(self.models.values())))
+        return httpx.Response(404)
+
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self)

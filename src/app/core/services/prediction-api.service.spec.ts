@@ -3,7 +3,8 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TimeoutError } from 'rxjs';
 import { ApiFailure, PredictResult } from '../models/prediction.model';
-import { PredictionApiService, toApiFailure } from './prediction-api.service';
+import { AppConfigService } from './app-config.service';
+import { NOT_CONNECTED, PredictionApiService, toApiFailure } from './prediction-api.service';
 
 describe('toApiFailure', () => {
   it('uses the backend JSON error body', () => {
@@ -19,7 +20,7 @@ describe('toApiFailure', () => {
   it('treats a network error as backend unreachable', () => {
     const failure = toApiFailure(new HttpErrorResponse({ status: 0, error: new ProgressEvent('error') }), 1000);
     expect(failure.code).toBe('BACKEND_UNREACHABLE');
-    expect(failure.message).toContain('uvicorn');
+    expect(failure.message).toContain('scripts/app.sh start');
   });
 
   it('treats a 5xx without JSON body (dev proxy, backend down) as backend unreachable', () => {
@@ -89,5 +90,29 @@ describe('PredictionApiService', () => {
     service.diagnostics().subscribe();
     http.expectOne('/api/health').flush({});
     http.expectOne('/api/diagnostics').flush({});
+  });
+
+  it('calls an AI server elsewhere when config.json says so', () => {
+    TestBed.inject(AppConfigService).set({ apiBaseUrl: 'https://ai.example.org' });
+    service.predict({ sequence: 'MKV', binding_type: 'rna' }).subscribe();
+    service.compare({ sequence: 'MKV', pdb: 'ATOM', binding_type: 'rna' }).subscribe();
+    service.health().subscribe();
+    http.expectOne('https://ai.example.org/predict').flush({});
+    http.expectOne('https://ai.example.org/compare').flush({});
+    http.expectOne('https://ai.example.org/health').flush({});
+  });
+
+  it('sends nothing without an AI server (static hosting)', () => {
+    TestBed.inject(AppConfigService).set({ apiBaseUrl: null });
+    expect(service.connected).toBe(false);
+    const failures: ApiFailure[] = [];
+    service.predict({ sequence: 'MKV', binding_type: 'metal' }).subscribe({ error: f => failures.push(f) });
+    service.predictPdb({ pdb: 'ATOM', binding_type: 'metal' }).subscribe({ error: f => failures.push(f) });
+    service.compare({ sequence: 'MKV', pdb: 'ATOM', binding_type: 'metal' }).subscribe({ error: f => failures.push(f) });
+    service.health().subscribe({ error: f => failures.push(f) });
+    service.diagnostics().subscribe({ error: f => failures.push(f) });
+    http.expectNone(() => true);
+    expect(failures.map(f => f.code)).toEqual(Array(5).fill('API_NOT_CONFIGURED'));
+    expect(failures[0].message).toBe(NOT_CONNECTED);
   });
 });

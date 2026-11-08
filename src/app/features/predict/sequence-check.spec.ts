@@ -1,4 +1,4 @@
-import { checkSequence } from './sequence-check';
+import { checkSequence, headerAccession } from './sequence-check';
 
 const UBQ = 'MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG';
 const check = (raw: string) => checkSequence(raw, 30, 400);
@@ -38,5 +38,20 @@ describe('checkSequence (mirrors backend/app/sequence.py)', () => {
     expect(check('A'.repeat(400)).error).toBeNull();
     expect(check('A'.repeat(29)).error).toBe('Too short: 29 residues (minimum 30).');
     expect(check('A'.repeat(401)).error).toContain('Too long: 401 residues (maximum 400');
+  });
+});
+
+describe('headerAccession', () => {
+  it('reads UniProt accessions from common FASTA headers', () => {
+    expect(headerAccession('>sp|P0CG48|UBIQ_HUMAN Polyubiquitin-C\nMQIF')).toBe('P0CG48');
+    expect(headerAccession('>tr|A0A0B0QJR1|X\nMQIF')).toBe('A0A0B0QJR1');
+    expect(headerAccession('>Q9K943 HTH-type transcriptional regulator MntR\nMPTP')).toBe('Q9K943');
+    expect(headerAccession('  >p06956\nMSNL')).toBe('P06956');
+  });
+
+  it('ignores headers without an accession, and plain sequences', () => {
+    expect(headerAccession('>my protein\nMQIF')).toBeNull();
+    expect(headerAccession('>1ABC_A chain A\nMQIF')).toBeNull();
+    expect(headerAccession('MQIFVKTLTG')).toBeNull();
   });
 });

@@ -65,6 +65,10 @@ class MockPredictor:
         probability = 1.0 / (1.0 + np.exp(-(8.0 * (score - cut) + offset)))
         return Prediction([float(p) for p in probability], ["mock predictor: synthetic probabilities"])
 
+    def prott5(self, sequence: str, pdb: str) -> tuple:
+        rng = np.random.default_rng(len(sequence))
+        return rng.normal(0.0, 0.2, (len(sequence), 1024)).astype(np.float32), 0.0
+
     def close(self) -> None:
         pass
 
@@ -164,6 +168,20 @@ class PbindPredictor:
                                  return_pdb=False)
         timing["model_s"] = round(time.perf_counter() - t0, 3)
         return out, timing
+
+    def prott5(self, sequence: str, pdb: str) -> tuple:
+        """ProtT5 embedding (L, 1024) of a structure, reused from a prediction when there was one; (array, seconds).
+
+        The metal model does not use ProtT5 itself, so for metal this is the moment it gets computed.
+        """
+        timing: dict[str, float] = {}
+        with self._lock:
+            try:
+                emb = self._embeddings(sequence, pdb, ("PROTT5",), timing)
+            except Exception as exc:
+                log.exception("ProtT5 failed (%d aa)", len(sequence))
+                raise PredictorFailed(f"ProtT5 embedding failed: {type(exc).__name__}: {exc}") from exc
+        return emb["PROTT5"], timing.get("prott5_s", 0.0)
 
     def predict(self, sequence: str, binding_type: str, pdb: str, threshold: float) -> Prediction:
         from .esmif import EsmIfError
@@ -276,6 +294,9 @@ class UnavailablePredictor:
         self.reason = reason
 
     def predict(self, sequence: str, binding_type: str, pdb: str, threshold: float) -> Prediction:
+        raise PredictorUnavailable(f"Predictor '{self.name}' is not available: {self.reason}")
+
+    def prott5(self, sequence: str, pdb: str) -> tuple:
         raise PredictorUnavailable(f"Predictor '{self.name}' is not available: {self.reason}")
 
     def close(self) -> None:

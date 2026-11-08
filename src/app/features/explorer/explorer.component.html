@@ -1,300 +1,239 @@
-<div class="explorer-page">
-  <!-- Header -->
-  <div class="explorer-header">
-    @if (currentProtein(); as p) {
-      <div class="header-main">
-        <div class="header-titles">
-          <h1 class="protein-name">{{ p.name }}</h1>
-          <div class="header-badges">
-            <span class="badge badge-mono">PDB {{ p.pdbId }}</span>
-            <span class="badge badge-mono">UniProt {{ p.uniprotId }}</span>
-            <span class="badge badge-class" [style.border-color]="ligandClassColors[p.bindingType]"
-                  [style.color]="ligandClassColors[p.bindingType]">
-              {{ ligandClassLabel(p.bindingType) }}
-            </span>
-            <span class="badge">{{ p.dataset }}</span>
-            <span class="badge badge-source">ESMFold predicted</span>
-          </div>
-        </div>
+<div class="wb-page explore">
+  <header class="page-head">
+    <div>
+      <h1>Compare models</h1>
+      <p>AdaBind, bindEmbed21DL and bindNode24 against experimental binding residues, on proteins held out from development.</p>
+    </div>
+    <a class="wb-tool" routerLink="/predict">Predict your own sequence</a>
+  </header>
 
-        @if (summary(); as s) {
-          <div class="header-stats">
-            <div class="stat">
-              <span class="stat-label">Mean pLDDT</span>
-              <span class="stat-value">{{ s.meanPlddt | number: '1.2-2' }}</span>
-            </div>
-            <div class="stat">
-              <span class="stat-label">Median pLDDT</span>
-              <span class="stat-value">{{ s.medianPlddt | number: '1.2-2' }}</span>
-            </div>
-            <div class="stat">
-              <span class="stat-label">Length</span>
-              <span class="stat-value">{{ s.length }} aa</span>
-            </div>
-            <div class="stat">
-              <span class="stat-label">Binding residues</span>
-              <span class="stat-value">{{ s.nBinding }}</span>
-            </div>
-            <div class="stat">
-              <span class="stat-label">Threshold τ</span>
-              <span class="stat-value">{{ result()?.threshold | number: '1.2-2' }}</span>
-            </div>
-          </div>
-        }
-      </div>
-    }
+  @if (failure(); as message) {
+    <div class="failure" role="alert">{{ message }}</div>
+  }
 
-    <!-- Navigation + search -->
-    <div class="nav-bar">
-      <div class="nav-controls">
-        <button class="nav-btn" (click)="prev()" [disabled]="currentIndex() === 0" title="Previous protein">◀</button>
-        <select class="protein-select" [value]="currentProtein()?.id ?? ''" (change)="onSelectProtein($event)">
-          @for (p of filtered(); track p.id; let i = $index) {
-            <option [value]="p.id">{{ i + 1 }}. {{ p.name }} ({{ p.pdbId }})</option>
+  @if (index(); as idx) {
+    <!-- Selection -->
+    <section class="wb-panel config" aria-label="Selection">
+      <div class="field dataset">
+        <label class="wb-field-label" for="dataset">Test set</label>
+        <select id="dataset" class="wb-select" [value]="dataset()" (change)="onDataset($event)">
+          @for (d of idx.datasets; track d.id) {
+            <option [value]="d.id" [selected]="d.id === dataset()">{{ d.label }} ({{ d.proteins }})</option>
           }
         </select>
-        <button class="nav-btn" (click)="next()" [disabled]="currentIndex() >= total() - 1" title="Next protein">▶</button>
-        <span class="nav-position">Protein {{ currentIndex() + 1 }} / {{ total() }}</span>
       </div>
 
-      <div class="search-wrapper">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/>
-          <path d="m21 21-4.35-4.35"/>
-        </svg>
-        <input
-          type="text"
-          class="search-input"
-          placeholder="Search ID, UniProt, PDB, name…"
-          [value]="filters().searchQuery"
-          (input)="onSearch($event)"
-        />
-        @if (filters().searchQuery) {
-          <button class="search-clear" (click)="clearSearch()">×</button>
+      <div class="field protein">
+        <span class="wb-field-label">Protein</span>
+        <div class="protein-row">
+          <app-protein-picker class="picker"
+            [proteins]="listed()" [selected]="selectedRow()" [filter]="ligandFilter()"
+            [counts]="ligandCounts()" [total]="datasetProteins().length"
+            (pick)="selectProtein($event)" (filterChange)="onLigandFilter($event)" />
+          <div class="stepper">
+            <button type="button" class="wb-tool" aria-label="Previous protein" [disabled]="position() <= 0" (click)="step(-1)">
+              <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+            <span class="count">{{ position() + 1 }} / {{ listed().length }}</span>
+            <button type="button" class="wb-tool" aria-label="Next protein" [disabled]="position() >= listed().length - 1" (click)="step(1)">
+              <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6 4.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field ligand">
+        <span class="wb-field-label">Ligand</span>
+        <div class="wb-segmented" role="group" aria-label="Ligand class">
+          @for (l of ligandChoices(); track l.value) {
+            <button type="button" [class.active]="ligand() === l.value" (click)="setLigand(l.value)"
+                    [attr.title]="l.residues + ' binding residues'">
+              {{ ligandChoices().length > 3 ? l.short : l.label }} <span class="n">{{ l.residues }}</span>
+            </button>
+          }
+        </div>
+      </div>
+    </section>
+
+    @if (shown(); as s) {
+      <!-- Protein -->
+      <section class="protein-head" [class.stale]="loadingProtein()">
+        <h2 [class.seq]="!s.row.name">{{ name(s.row) }}</h2>
+        <p class="facts">
+          <a [href]="'https://www.uniprot.org/uniprotkb/' + s.row.id" target="_blank" rel="noopener">{{ s.row.id }}</a>
+          @if (s.row.gene) { <span class="mono">{{ s.row.gene }}</span> }
+          @if (s.row.organism) { <span class="org">{{ s.row.organism }}</span> }
+          <span>{{ s.row.length }} residues</span>
+          <span>mean pLDDT <b>{{ meanPlddt() | number: '1.2-2' }}</b></span>
+          <span [style.color]="ligandColor()">{{ s.row.ligands[s.ligand] }} {{ ligandLabel() }} binding residues</span>
+          @if (s.row.nameNote) { <span class="note">{{ s.row.nameNote }}</span> }
+        </p>
+        @if (featured(); as f) {
+          <p class="featured">Best AdaBind result in {{ s.row.split }} (highest MCC, {{ f.MCC | number: '1.3-3' }}). The table below gives the whole test set.</p>
         }
-      </div>
-    </div>
-  </div>
-
-  <!-- Grid -->
-  <div class="explorer-grid">
-    <aside class="explorer-sidebar">
-      <!-- Filters -->
-      <section class="sidebar-section">
-        <h3 class="sidebar-title">Filters</h3>
-
-        <div class="filter-group">
-          <label class="filter-label">Dataset</label>
-          <select class="filter-select" [value]="filters().dataset" (change)="onDatasetChange($event)">
-            @for (o of datasetOptions; track o.value) {
-              <option [value]="o.value">{{ o.label }}</option>
-            }
-          </select>
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">Prediction Method</label>
-          <select class="filter-select" [value]="filters().method" (change)="onMethodChange($event)">
-            @for (m of methods; track m) {
-              <option [value]="m">{{ m }}</option>
-            }
-          </select>
-        </div>
-
-        <div class="filter-group">
-          <label class="filter-label">Binding Type</label>
-          <select class="filter-select" [value]="filters().bindingType" (change)="onBindingTypeChange($event)">
-            @for (o of bindingTypeOptions; track o.value) {
-              <option [value]="o.value">{{ o.label }}</option>
-            }
-          </select>
-        </div>
-
-        <button class="btn-reset" (click)="resetFilters()">Reset Filters</button>
       </section>
 
-      <!-- Metrics -->
-      @if (result(); as r) {
-        <section class="sidebar-section">
-          <h3 class="sidebar-title">Performance · {{ r.method }}</h3>
-          <div class="metrics-grid">
-            <div class="metric-item">
-              <div class="metric-label">F1</div>
-              <div class="metric-value">{{ r.metrics.f1 | percent: '1.0-1' }}</div>
-            </div>
-            <div class="metric-item">
-              <div class="metric-label">MCC</div>
-              <div class="metric-value">{{ r.metrics.mcc | number: '1.3-3' }}</div>
-            </div>
-            <div class="metric-item">
-              <div class="metric-label">Precision</div>
-              <div class="metric-value">{{ r.metrics.precision | percent: '1.0-1' }}</div>
-            </div>
-            <div class="metric-item">
-              <div class="metric-label">Recall</div>
-              <div class="metric-value">{{ r.metrics.recall | percent: '1.0-1' }}</div>
-            </div>
-          </div>
-          <div class="confusion">
-            <span class="c-tp">TP {{ r.metrics.tp }}</span>
-            <span class="c-fp">FP {{ r.metrics.fp }}</span>
-            <span class="c-fn">FN {{ r.metrics.fn }}</span>
-            <span class="c-tn">TN {{ r.metrics.tn }}</span>
-          </div>
-        </section>
-      }
-
-      <!-- Legend -->
-      <section class="sidebar-section">
-        <h3 class="sidebar-title">Legend</h3>
-        <div class="legend-group">
-          <div class="legend-head">Prediction status</div>
-          <div class="legend-row"><span class="swatch" [style.background-color]="statusColors.TP"></span>True Positive (TP)</div>
-          <div class="legend-row"><span class="swatch" [style.background-color]="statusColors.FP"></span>False Positive (FP)</div>
-          <div class="legend-row"><span class="swatch" [style.background-color]="statusColors.FN"></span>False Negative (FN)</div>
-          <div class="legend-row"><span class="swatch" [style.background-color]="statusColors.TN"></span>True Negative (TN) · ribbon background</div>
-        </div>
-        <div class="legend-group">
-          <div class="legend-head">Ligand class</div>
-          @for (t of bindingTypes; track t.value) {
-            <div class="legend-row">
-              <span class="swatch swatch-ring" [style.background-color]="ligandClassColors[t.value]"></span>{{ t.label }}
-            </div>
+      <!-- Viewer controls, shared by the three models -->
+      <section class="wb-toolbar controls" aria-label="Structure view">
+        <div class="wb-segmented" role="group" aria-label="Colour by">
+          @for (m of colorModes; track m.value) {
+            <button type="button" [class.active]="colorMode() === m.value" (click)="setColorMode(m.value)">{{ m.label }}</button>
           }
         </div>
-        <div class="legend-group">
-          <div class="legend-head">Structure confidence (pLDDT)</div>
-          @for (band of plddtBands; track band.min) {
-            <div class="legend-row"><span class="swatch" [style.background-color]="band.color"></span>{{ band.label }}</div>
-          }
+        <label class="wb-check">
+          <input type="checkbox" [checked]="errorsOnly()" (change)="errorsOnly.set(!errorsOnly())" />Errors only
+        </label>
+        <label class="wb-check">
+          <input type="checkbox" [checked]="linked()" (change)="toggleLinked()" />Rotate together
+        </label>
+        <button type="button" class="wb-tool" (click)="focus('ground-truth')">Focus binding site</button>
+        <button type="button" class="wb-tool" (click)="resetView()">Reset view</button>
+        <div class="wb-toolbar-end">
+          <app-structure-legend [mode]="colorMode()" [hasTruth]="true" />
         </div>
       </section>
-    </aside>
 
-    <!-- Main -->
-    <main class="explorer-main">
-      @if (result(); as r) {
-        <div class="viewer-card">
-          <div class="viewer-toolbar">
-            <div class="segmented" role="group" aria-label="Colour by">
-              @for (m of colorModes; track m.value) {
-                <button type="button" [class.active]="colorMode() === m.value" (click)="colorMode.set(m.value)">{{ m.label }}</button>
-              }
-            </div>
+      <!-- One column per model -->
+      <section class="models">
+        @for (p of panels(); track p.id; let i = $index) {
+          <article class="wb-panel model" [class.lead]="p.id === 'adabind'">
+            <header class="wb-panel-head">
+              <h2>{{ p.label }}</h2>
+              <span class="wb-sub">
+                @if (p.proxy) { nucleic-acid output · }
+                threshold {{ p.threshold | number: '1.3-3' }}
+              </span>
+            </header>
+            <app-prediction-viewer
+              class="viewer"
+              [pdb]="s.pdb"
+              [sequence]="s.doc.sequence"
+              [probability]="p.probability"
+              [binding]="p.binding"
+              [groundTruth]="truth()"
+              [status]="p.status"
+              [plddt]="s.doc.plddt"
+              [colorMode]="colorMode()"
+              [errorsOnly]="errorsOnly()"
+              [ligandClassColor]="ligandColor()"
+              [ligandClassLabel]="ligandLabel()"
+              [selectedIndex]="selectedIndex()"
+              [cameraLink]="cameraLink"
+              (residueSelect)="selectResidue($event)"
+            />
+            @if (p.metrics; as m) {
+              <dl class="metrics">
+                <div><dt>Precision</dt><dd>{{ m.precision | number: '1.3-3' }}</dd></div>
+                <div><dt>Recall</dt><dd>{{ m.recall | number: '1.3-3' }}</dd></div>
+                <div><dt>F1</dt><dd>{{ m.F1 | number: '1.3-3' }}</dd></div>
+                <div><dt>MCC</dt><dd>{{ m.MCC | number: '1.3-3' }}</dd></div>
+                <div><dt>AUPRC</dt><dd>{{ m.AUPRC | number: '1.3-3' }}</dd></div>
+              </dl>
+              <footer class="counts">
+                <span><i [style.background]="statusColors.TP"></i>{{ m.TP }} correct</span>
+                <span><i [style.background]="statusColors.FP"></i>{{ m.FP }} false alarms</span>
+                <span><i [style.background]="statusColors.FN"></i>{{ m.FN }} missed</span>
+                <button type="button" class="link" (click)="exportPng(i)">PNG</button>
+              </footer>
+            }
+          </article>
+        }
+      </section>
 
-            <div class="toolbar-divider"></div>
-
-            <label class="toggle">
-              <input type="checkbox" [checked]="showGroundTruth()" (change)="showGroundTruth.set(!showGroundTruth())" />
-              <span>Binding site</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" [checked]="showPredicted()" (change)="showPredicted.set(!showPredicted())" />
-              <span>Prediction</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" [checked]="errorsOnly()" (change)="errorsOnly.set(!errorsOnly())" />
-              <span>Errors only</span>
-            </label>
-
-            <div class="toolbar-divider"></div>
-
-            <button class="tool-btn" (click)="focusPocket('ground-truth')">Focus GT pocket</button>
-            <button class="tool-btn" (click)="focusPocket('predicted')">Focus predicted</button>
-
-            <div class="toolbar-divider"></div>
-
-            <div class="export-group">
-              <select class="scale-select" [value]="exportScale()" (change)="setExportScale($event)" title="Image scale">
-                <option [value]="1">1×</option>
-                <option [value]="2">2×</option>
-                <option [value]="4">4×</option>
-              </select>
-              <button class="tool-btn" (click)="exportPng(exportScale())">PNG</button>
-              <button class="tool-btn" (click)="downloadPdb()">PDB</button>
-              <button class="tool-btn" (click)="copyShareLink()">{{ justCopied() ? 'Copied!' : 'Share' }}</button>
-            </div>
-          </div>
-
-          <app-prediction-viewer
-            class="viewer"
-            [pdb]="r.pdb"
-            [sequence]="r.protein.sequence"
-            [probability]="r.probability"
-            [binding]="r.binding"
-            [groundTruth]="r.groundTruth"
-            [status]="r.status"
-            [plddt]="r.plddt"
-            [colorMode]="colorMode()"
-            [showGroundTruth]="showGroundTruth()"
-            [showPredicted]="showPredicted()"
-            [errorsOnly]="errorsOnly()"
-            [ligandClassColor]="ligandClassColors[r.protein.bindingType]"
-            [ligandClassLabel]="ligandClassLabel(r.protein.bindingType)"
-            [selectedIndex]="selectedIndex()"
-            (residueSelect)="onResidueSelect($event)"
-            (residueHover)="onResidueHover($event)"
-          />
-
-          <div class="viewer-legend">
-            @if (colorMode() === 'rainbow') {
-              <span>N → C</span><span class="gradient" [style.background]="rainbowGradient"></span><span class="muted">residue order</span>
-            } @else if (colorMode() === 'probability') {
-              <span>0</span><span class="gradient" [style.background]="probabilityGradient"></span><span>1</span>
-              <span class="muted">confidence</span>
-            } @else if (colorMode() === 'plddt') {
-              @for (band of plddtBands; track band.min) {
-                <span class="swatch" [style.background-color]="band.color"></span><span>{{ band.label }}</span>
+      <!-- Ground truth vs models, residue by residue -->
+      <section class="wb-panel">
+        <header class="wb-panel-head">
+          <h2>Ground truth and predictions along the sequence</h2>
+          <span class="readout">
+            @if (readout(); as r) {
+              <b>{{ r.aa }}{{ r.position }}</b>
+              <span [style.color]="r.truth ? ligandColor() : null">{{ r.truth ? 'binding' : 'not binding' }}</span>
+              <span>pLDDT {{ r.plddt | number: '1.2-2' }}</span>
+              @for (m of r.models; track m.label) {
+                <span>{{ m.label }} <b [style.color]="m.status === 'TN' ? null : statusColors[m.status]">{{ m.probability | number: '1.3-3' }}</b></span>
               }
             } @else {
-              <span class="muted">cartoon coloured by chain</span>
+              <span class="wb-sub">Point at a residue to compare the models; click to find it in 3D.</span>
             }
-            <span class="legend-sep"></span>
-            @if (showPredicted()) {
-              <span class="swatch" [style.background-color]="statusColors.TP"></span><span>TP</span>
-              <span class="swatch" [style.background-color]="statusColors.FP"></span><span>FP</span>
-              <span class="swatch" [style.background-color]="statusColors.FN"></span><span>FN</span>
-            }
-            @if (showGroundTruth()) {
-              <span class="swatch swatch-ring" [style.background-color]="ligandClassColors[r.protein.bindingType]"></span>
-              <span>{{ ligandClassLabel(r.protein.bindingType) }} site (sticks)</span>
-            }
+          </span>
+        </header>
+        <div class="track">
+          <app-residue-compare
+            [sequence]="s.doc.sequence" [truth]="truth()" [tracks]="tracks()" [color]="ligandColor()"
+            [selectedIndex]="selectedIndex()" (residueSelect)="selectResidue($event)" (residueHover)="hoverIndex.set($event)" />
+        </div>
+      </section>
+
+      <section class="tables">
+        <div class="wb-panel">
+          <header class="wb-panel-head">
+            <h2>Residues</h2>
+            <span class="wb-sub">ground truth, plus anything a model called</span>
+          </header>
+          <div class="scroll">
+            <table class="wb-table">
+              <thead>
+                <tr>
+                  <th>Residue</th><th>pLDDT</th><th>Ground truth</th>
+                  @for (p of panels(); track p.id) { <th>{{ p.label }}</th> }
+                </tr>
+              </thead>
+              <tbody>
+                @for (r of residueRows(); track r.index) {
+                  <tr class="clickable" [class.selected]="selectedIndex() === r.index" (click)="selectResidue(r.index)">
+                    <td>{{ r.aa }}{{ r.index }}</td>
+                    <td [class.low]="r.plddt < lowPlddt">{{ r.plddt | number: '1.2-2' }}</td>
+                    <td>@if (r.truth) { <span [style.color]="ligandColor()">binding</span> } @else { <span class="none">–</span> }</td>
+                    @for (m of r.models; track m.id) {
+                      <td [style.color]="m.status === 'TN' ? null : statusColors[m.status]" [class.none]="m.status === 'TN'"
+                          [attr.title]="m.status">{{ m.probability | number: '1.3-3' }}</td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
           </div>
         </div>
 
-        @if (selectedResidue(); as sel) {
-          <div class="selected-panel">
-            <div class="sel-title">Selected residue <b>{{ sel.aa }}{{ sel.position }}</b></div>
-            <div class="sel-grid">
-              <div class="sel-cell"><span>Score</span><b>{{ sel.probability | number: '1.3-3' }}</b></div>
-              <div class="sel-cell"><span>pLDDT</span><b [class.low]="sel.plddt < lowPlddt">{{ sel.plddt | number: '1.2-2' }}</b></div>
-              <div class="sel-cell"><span>Ground truth</span><b>{{ sel.groundTruth ? 'binding' : 'non-binding' }}</b></div>
-              <div class="sel-cell"><span>Prediction</span><b>{{ sel.predicted ? 'binding' : 'non-binding' }}</b></div>
-              <div class="sel-cell"><span>Status</span><b [style.color]="statusColors[sel.status]">{{ statusLabels[sel.status] }}</b></div>
-              <div class="sel-cell"><span>Ligand class</span><b>{{ ligandClassLabel(r.protein.bindingType) }}</b></div>
+        @if (benchmark(); as b) {
+          <div class="wb-panel">
+            <header class="wb-panel-head">
+              <h2>All of {{ dataset() }}, {{ ligandLabel() }}</h2>
+              <span class="wb-sub">{{ b.proteins }} proteins with a site · {{ b.positives | number }} of {{ b.residues | number }} residues</span>
+            </header>
+            <div class="wide">
+            <table class="wb-table">
+              <thead>
+                <tr><th>Model</th><th>AUPRC</th><th>AUROC</th><th>Precision</th><th>Recall</th><th>F1</th><th>MCC</th><th>Threshold</th></tr>
+              </thead>
+              <tbody>
+                @for (row of b.models; track row.id) {
+                  <tr>
+                    <td class="model-name">{{ row.label }}</td>
+                    <td>{{ row.m.AUPRC | number: '1.3-3' }}</td>
+                    <td>{{ row.m.AUROC | number: '1.3-3' }}</td>
+                    <td>{{ row.m.precision | number: '1.3-3' }}</td>
+                    <td>{{ row.m.recall | number: '1.3-3' }}</td>
+                    <td>{{ row.m.F1 | number: '1.3-3' }}</td>
+                    <td>{{ row.m.MCC | number: '1.3-3' }}</td>
+                    <td>{{ row.m.threshold | number: '1.3-3' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+            </div>
+            <div class="footnotes">
+              <p>{{ idx.notes.thresholds }}</p>
+              @if (ligand() === 'dna' || ligand() === 'rna') { <p>{{ idx.notes.dnaRna }}</p> }
+              <p>{{ idx.notes.structure }}</p>
             </div>
           </div>
         }
-
-        <div class="sequence-card">
-          <div class="sequence-header">
-            <h3>Sequence & Predictions</h3>
-            <span class="muted">tint = confidence · outline = binding site · green tick = predicted · bar = pLDDT · click to locate</span>
-          </div>
-          <app-probability-track
-            [sequence]="r.protein.sequence"
-            [probability]="r.probability"
-            [binding]="r.groundTruth"
-            [predicted]="r.binding"
-            [status]="r.status"
-            [plddt]="r.plddt"
-            [selectedIndex]="selectedIndex()"
-            (residueSelect)="onResidueSelect($event)"
-          />
-        </div>
-      } @else {
-        <div class="empty">No protein matches the current filters.</div>
-      }
-    </main>
-  </div>
+      </section>
+    } @else if (!failure()) {
+      <div class="placeholder">Loading protein…</div>
+    }
+  } @else if (!failure()) {
+    <div class="placeholder">Loading comparison data…</div>
+  }
 </div>

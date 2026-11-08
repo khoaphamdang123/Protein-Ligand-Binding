@@ -1,324 +1,349 @@
-import { Component, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
-import { CommonModule, DecimalPipe, PercentPipe } from '@angular/common';
-import { DatasetType } from '../../core/models/dataset.model';
-import { PredictionMethod } from '../../core/models/method.model';
+import { Component, DestroyRef, OnInit, QueryList, ViewChildren, computed, inject, signal } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { LIGAND_CLASSES, LigandClass } from '../../core/models/prediction.model';
 import {
-  ExploreFilters,
-  ExploreProtein,
-  ExploreResult,
+  DatasetId, ExploreIndex, ExploreMetrics, LoadedProtein, MODEL_IDS, ModelId, ProteinRow, ResidueStatus,
 } from '../../core/models/explore.model';
 import { ExploreDataService } from '../../core/services/explore-data.service';
+import { bitsToBooleans, displayName, ligandsOf, residueStatus, validLigand } from '../../core/utils/explore';
+import { LIGAND_CLASS_COLORS, LOW_PLDDT, STATUS_COLORS } from '../../core/utils/prediction-colors';
 import {
-  LIGAND_CLASS_COLORS,
-  LOW_PLDDT,
-  PLDDT_BANDS,
-  STATUS_COLORS,
-  STATUS_LABELS,
-  probabilityGradientCss,
-} from '../../core/utils/prediction-colors';
-import {
-  FocusMode,
-  PredictionColorMode,
-  PredictionViewerComponent,
+  CameraLink, FocusMode, PredictionColorMode, PredictionViewerComponent,
 } from '../../molecular/prediction-viewer/prediction-viewer.component';
-import { ProbabilityTrackComponent } from '../../molecular/probability-track/probability-track.component';
+import { CompareTrack, ResidueCompareComponent } from '../../molecular/residue-compare/residue-compare.component';
+import { StructureLegendComponent } from '../../molecular/structure-legend/structure-legend.component';
+import { ProteinPickerComponent } from './protein-picker.component';
+
+interface ModelPanel {
+  id: ModelId;
+  label: string;
+  threshold: number;
+  proxy: boolean;              // scored with the nucleic-acid output (no DNA / RNA specific output)
+  probability: number[];
+  binding: boolean[];
+  status: ResidueStatus[];
+  metrics: ExploreMetrics | null;
+}
+
+/** What is on screen: a protein, loaded, with one of its ligand classes. Changes as one unit. */
+interface Shown extends LoadedProtein {
+  row: ProteinRow;
+  ligand: LigandClass;
+}
+
+type ColorChoice = { value: PredictionColorMode; label: string };
 
 @Component({
   selector: 'app-explorer',
   standalone: true,
-  imports: [CommonModule, DecimalPipe, PercentPipe, PredictionViewerComponent, ProbabilityTrackComponent],
+  imports: [DecimalPipe, RouterLink, PredictionViewerComponent, StructureLegendComponent, ProteinPickerComponent,
+    ResidueCompareComponent],
   templateUrl: './explorer.component.html',
-  styleUrl: './explorer.component.scss'
+  styleUrl: './explorer.component.scss',
 })
 export class ExplorerComponent implements OnInit {
-  private exploreData = inject(ExploreDataService);
+  private data = inject(ExploreDataService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private destroyRef = inject(DestroyRef);
 
-  @ViewChild(PredictionViewerComponent) viewer?: PredictionViewerComponent;
+  @ViewChildren(PredictionViewerComponent) private viewers!: QueryList<PredictionViewerComponent>;
 
-  proteins = this.exploreData.proteins;
-
-  readonly methods: PredictionMethod[] = ['AdaBind', 'bindEmbed21DL', 'bindNode24'];
-  readonly bindingTypes = LIGAND_CLASSES;
-  readonly plddtBands = PLDDT_BANDS;
-  readonly lowPlddt = LOW_PLDDT;
+  readonly ligandClasses = LIGAND_CLASSES;
+  readonly ligandColors = LIGAND_CLASS_COLORS;
   readonly statusColors = STATUS_COLORS;
-  readonly statusLabels = STATUS_LABELS;
-  readonly ligandClassColors = LIGAND_CLASS_COLORS;
-  readonly probabilityGradient = probabilityGradientCss();
-  readonly rainbowGradient = 'linear-gradient(90deg, #E53935, #FB8C00, #FDD835, #43A047, #00ACC1, #1E5AA8, #7E57C2)';
-  readonly colorModes: { value: PredictionColorMode; label: string }[] = [
-    { value: 'rainbow', label: 'Structure' },
-    { value: 'probability', label: 'Confidence' },
+  readonly lowPlddt = LOW_PLDDT;
+  readonly modelIds = MODEL_IDS;
+  readonly colorModes: ColorChoice[] = [
+    { value: 'outcome', label: 'Outcome' },
+    { value: 'probability', label: 'Probability' },
     { value: 'plddt', label: 'pLDDT' },
-    { value: 'chain', label: 'Chain' },
+    { value: 'rainbow', label: 'N to C' },
   ];
+  readonly cameraLink = new CameraLink();
+  readonly name = displayName;
 
-  filters = signal<ExploreFilters>({
-    dataset: 'all',
-    method: 'AdaBind',
-    bindingType: 'all',
-    searchQuery: '',
+  index = signal<ExploreIndex | null>(null);
+  failure = signal<string | null>(null);
+
+  // Selection
+  dataset = signal<DatasetId>('TestSet300');
+  ligandFilter = signal<LigandClass | 'all'>('all');
+  proteinId = signal<string | null>(null);
+  shown = signal<Shown | null>(null);
+  loadingProtein = signal(false);
+  selectedIndex = signal<number | null>(null);
+  hoverIndex = signal<number | null>(null);
+
+  // View
+  colorMode = signal<PredictionColorMode>('outcome');
+  errorsOnly = signal(false);
+  linked = signal(true);
+  copied = signal(false);
+
+  datasetProteins = computed(() => (this.index()?.proteins ?? []).filter(p => p.split === this.dataset()));
+
+  /** How many proteins of the dataset have a site for each ligand class. */
+  ligandCounts = computed(() => {
+    const counts: Partial<Record<LigandClass, number>> = {};
+    for (const p of this.datasetProteins()) {
+      for (const l of ligandsOf(p)) counts[l] = (counts[l] ?? 0) + 1;
+    }
+    return counts;
   });
 
-  currentIndex = signal(0);
-  result = signal<ExploreResult | null>(null);
-  selectedIndex = signal<number | null>(null);
+  listed = computed(() => {
+    const filter = this.ligandFilter();
+    const all = this.datasetProteins();
+    return filter === 'all' ? all : all.filter(p => (p.ligands[filter] ?? 0) > 0);
+  });
 
-  // Viewer settings.
-  colorMode = signal<PredictionColorMode>('rainbow');
-  showGroundTruth = signal(true);
-  showPredicted = signal(true);
-  errorsOnly = signal(false);
-  exportScale = signal(2);
+  selectedRow = computed(() => this.index()?.proteins.find(p => p.id === this.proteinId()) ?? null);
+  position = computed(() => this.listed().findIndex(p => p.id === this.proteinId()));
 
-  readonly datasetOptions: { value: ExploreFilters['dataset']; label: string }[] = [
-    { value: 'all', label: 'All Datasets' },
-    { value: 'TestSet300', label: 'TestSet300 (300)' },
-    { value: 'TestSetNew46', label: 'TestSetNew46 (46)' },
-  ];
+  /** Only the ligand classes this protein has a site for. */
+  ligandChoices = computed(() => {
+    const row = this.selectedRow();
+    if (!row) return [];
+    const available = ligandsOf(row);
+    return LIGAND_CLASSES.filter(l => available.includes(l.value)).map(l => ({ ...l, residues: row.ligands[l.value] ?? 0 }));
+  });
 
-  readonly bindingTypeOptions: { value: ExploreFilters['bindingType']; label: string }[] = [
-    { value: 'all', label: 'All Types' },
-    { value: 'metal', label: 'Metal ion' },
-    { value: 'nuclear', label: 'Nucleic acid' },
-    { value: 'small', label: 'Small molecule' },
-  ];
+  ligand = computed(() => this.shown()?.ligand ?? 'metal');
+  /** Set while the page shows AdaBind's best protein of the test set, so that it is not read as a typical one. */
+  featured = computed(() => {
+    const s = this.shown();
+    const best = s ? this.index()?.featured[s.row.split] : null;
+    return best && best.protein === s?.doc.id && best.ligand === s.ligand ? best : null;
+  });
+  ligandLabel = computed(() => LIGAND_CLASSES.find(l => l.value === this.ligand())?.label ?? '');
+  ligandColor = computed(() => LIGAND_CLASS_COLORS[this.ligand()]);
 
-  readonly filtered = computed<ExploreProtein[]>(() => {
-    const f = this.filters();
-    const q = f.searchQuery.trim().toLowerCase();
-    return this.proteins().filter(p => {
-      if (f.dataset !== 'all' && p.dataset !== f.dataset) return false;
-      if (f.bindingType !== 'all' && p.bindingType !== f.bindingType) return false;
-      if (q) {
-        const hay = `${p.id} ${p.uniprotId} ${p.pdbId} ${p.name}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+  truth = computed(() => {
+    const s = this.shown();
+    return s ? bitsToBooleans(s.doc.labels[s.ligand]) : [];
+  });
+
+  panels = computed<ModelPanel[]>(() => {
+    const s = this.shown();
+    const index = this.index();
+    if (!s || !index) return [];
+    const truth = this.truth();
+    return MODEL_IDS.map(id => {
+      const model = s.doc.models[id];
+      const binding = bitsToBooleans(model.call[s.ligand]);
+      return {
+        id,
+        label: index.models[id].label,
+        threshold: index.models[id].thresholds[s.ligand],
+        proxy: id !== 'adabind' && (s.ligand === 'dna' || s.ligand === 'rna'),
+        probability: model.prob[s.ligand],
+        binding,
+        status: residueStatus(truth, binding),
+        metrics: model.metrics[s.ligand] ?? null,
+      };
     });
   });
 
-  readonly currentProtein = computed<ExploreProtein | null>(() => {
-    const list = this.filtered();
-    const i = this.currentIndex();
-    return list[i] ?? null;
+  tracks = computed<CompareTrack[]>(() => this.panels().map(p => ({ id: p.id, label: p.label, status: p.status })));
+
+  meanPlddt = computed(() => {
+    const p = this.shown()?.doc.plddt ?? [];
+    return p.length ? p.reduce((a, b) => a + b, 0) / p.length : 0;
   });
 
-  readonly total = computed(() => this.filtered().length);
-
-  readonly selectedResidue = computed(() => {
-    const r = this.result();
-    const i = this.selectedIndex();
-    if (!r || !i) return null;
-    const idx = i - 1;
-    return {
-      position: i,
-      aa: r.protein.sequence[idx],
-      probability: r.probability[idx],
-      plddt: r.plddt[idx],
-      predicted: r.binding[idx],
-      groundTruth: r.groundTruth[idx],
-      status: r.status[idx],
-    };
-  });
-
-  readonly summary = computed(() => {
-    const r = this.result();
-    if (!r) return null;
-    const p = r.plddt;
-    const sorted = [...p].sort((a, b) => a - b);
-    const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
-    const mean = p.reduce((a, b) => a + b, 0) / p.length;
-    return {
-      meanPlddt: mean,
-      medianPlddt: median,
-      nBinding: r.groundTruth.filter(Boolean).length,
-      nPredicted: r.binding.filter(Boolean).length,
-      length: r.protein.length,
-    };
-  });
-
-  private pendingSelection: number | null = null;
-
-  ngOnInit(): void {
-    this.restoreFromQuery();
-    this.reloadResult();
-  }
-
-  private restoreFromQuery(): void {
-    const params = new URLSearchParams(window.location.search);
-    const method = params.get('method');
-    const type = params.get('type');
-    const dataset = params.get('dataset');
-    const color = params.get('color');
-    if (method && (this.methods as string[]).includes(method)) {
-      this.filters.update(f => ({ ...f, method: method as PredictionMethod }));
-    }
-    if (type && (this.bindingTypes.map(t => t.value) as string[]).includes(type)) {
-      this.filters.update(f => ({ ...f, bindingType: type as LigandClass }));
-    }
-    if (dataset === 'TestSet300' || dataset === 'TestSetNew46' || dataset === 'all') {
-      this.filters.update(f => ({ ...f, dataset }));
-    }
-    if (color === 'rainbow' || color === 'probability' || color === 'plddt' || color === 'chain') {
-      this.colorMode.set(color as PredictionColorMode);
-    }
-    const proteinId = params.get('protein');
-    if (proteinId) {
-      const idx = this.filtered().findIndex(p => p.id === proteinId);
-      if (idx >= 0) {
-        this.currentIndex.set(idx);
-        const res = Number(params.get('res'));
-        if (Number.isInteger(res) && res > 0) this.pendingSelection = res;
-        return;
+  /** Residues worth reading: every ground-truth residue and every residue a model calls binding. */
+  residueRows = computed(() => {
+    const s = this.shown();
+    if (!s) return [];
+    const truth = this.truth();
+    const panels = this.panels();
+    const rows = [];
+    for (let i = 0; i < s.doc.sequence.length; i++) {
+      if (truth[i] || panels.some(p => p.binding[i])) {
+        rows.push({
+          index: i + 1, aa: s.doc.sequence[i], plddt: s.doc.plddt[i], truth: truth[i],
+          models: panels.map(p => ({ id: p.id, probability: p.probability[i], status: p.status[i] })),
+        });
       }
     }
+    return rows;
+  });
+
+  /** Readout of the residue under the pointer, else of the selected one. */
+  readout = computed(() => {
+    const s = this.shown();
+    const position = this.hoverIndex() ?? this.selectedIndex();
+    if (!s || !position) return null;
+    const i = position - 1;
+    return {
+      position, aa: s.doc.sequence[i], plddt: s.doc.plddt[i], truth: this.truth()[i],
+      models: this.panels().map(p => ({ label: p.label, probability: p.probability[i], status: p.status[i] })),
+    };
+  });
+
+  benchmark = computed(() => {
+    const index = this.index();
+    if (!index) return null;
+    const entry = index.summary[this.dataset()][this.ligand()];
+    const models = MODEL_IDS.map(id => ({ id, label: index.models[id].label, m: entry.models[id] }));
+    return { proteins: entry.n_proteins_with_site, residues: models[0].m.n_residues, positives: models[0].m.n_positive, models };
+  });
+
+  private loadToken = 0;
+
+  ngOnInit(): void {
+    const sub = this.data.index().subscribe({
+      next: index => {
+        this.index.set(index);
+        this.restoreFromUrl(index);
+      },
+      error: () => this.failure.set('The comparison data could not be loaded (explore-data/index.json).'),
+    });
+    this.destroyRef.onDestroy(() => sub.unsubscribe());
   }
 
-  private reloadResult(): void {
-    const protein = this.currentProtein();
-    if (!protein) {
-      this.result.set(null);
+  private restoreFromUrl(index: ExploreIndex): void {
+    const params = this.route.snapshot.queryParamMap;
+    const color = params.get('color');
+    if (this.colorModes.some(c => c.value === color)) {
+      this.colorMode.set(color as PredictionColorMode);
+    }
+    const asked = index.proteins.find(p => p.id === params.get('protein'));
+    const dataset = params.get('dataset');
+    if (asked) {
+      this.dataset.set(asked.split);
+    } else if (index.datasets.some(d => d.id === dataset)) {
+      this.dataset.set(dataset as DatasetId);
+    }
+    const best = index.featured[this.dataset()];
+    const res = Number(params.get('res'));
+    this.selectProtein(asked?.id ?? best.protein, asked ? params.get('ligand') as LigandClass | null : best.ligand,
+      Number.isInteger(res) && res > 0 ? res : null);
+  }
+
+  // ---- Selection ----
+
+  onDataset(event: Event): void {
+    const dataset = (event.target as HTMLSelectElement).value as DatasetId;
+    this.dataset.set(dataset);
+    this.ligandFilter.set('all');
+    if (this.selectedRow()?.split === dataset) {
+      this.syncUrl();
       return;
     }
-    this.result.set(this.exploreData.getResult(protein, this.filters().method));
-    const sel = this.pendingSelection;
-    this.pendingSelection = null;
-    this.selectedIndex.set(sel && sel <= protein.length ? sel : null);
+    const best = this.index()?.featured[dataset];
+    if (best) this.selectProtein(best.protein, best.ligand);
   }
 
-  // ---- Filters & navigation ----
-
-  onSearch(event: Event): void {
-    const q = (event.target as HTMLInputElement).value;
-    this.filters.update(f => ({ ...f, searchQuery: q }));
-    this.currentIndex.set(0);
-    this.reloadResult();
-  }
-
-  clearSearch(): void {
-    this.filters.update(f => ({ ...f, searchQuery: '' }));
-    this.currentIndex.set(0);
-    this.reloadResult();
-  }
-
-  onDatasetChange(event: Event): void {
-    const dataset = (event.target as HTMLSelectElement).value as DatasetType | 'all';
-    this.filters.update(f => ({ ...f, dataset }));
-    this.currentIndex.set(0);
-    this.reloadResult();
-  }
-
-  onMethodChange(event: Event): void {
-    const method = (event.target as HTMLSelectElement).value as PredictionMethod;
-    this.filters.update(f => ({ ...f, method }));
-    this.reloadResult();
-  }
-
-  onBindingTypeChange(event: Event): void {
-    const bindingType = (event.target as HTMLSelectElement).value as LigandClass | 'all';
-    this.filters.update(f => ({ ...f, bindingType }));
-    this.currentIndex.set(0);
-    this.reloadResult();
-  }
-
-  resetFilters(): void {
-    this.filters.set({ dataset: 'all', method: this.filters().method, bindingType: 'all', searchQuery: '' });
-    this.currentIndex.set(0);
-    this.reloadResult();
-  }
-
-  onSelectProtein(event: Event): void {
-    const id = (event.target as HTMLSelectElement).value;
-    const idx = this.filtered().findIndex(p => p.id === id);
-    if (idx >= 0) {
-      this.currentIndex.set(idx);
-      this.reloadResult();
+  onLigandFilter(filter: LigandClass | 'all'): void {
+    this.ligandFilter.set(filter);
+    if (filter === 'all') return;
+    const current = this.selectedRow();
+    if (current && (current.ligands[filter] ?? 0) > 0) {
+      this.setLigand(filter);
+    } else if (this.listed()[0]) {
+      this.selectProtein(this.listed()[0].id, filter);
     }
   }
 
-  goTo(index: number): void {
-    const max = this.total() - 1;
-    const clamped = Math.max(0, Math.min(max, index));
-    if (clamped === this.currentIndex()) return;
-    this.currentIndex.set(clamped);
-    this.reloadResult();
+  async selectProtein(id: string, ligand: LigandClass | null = null, residue: number | null = null): Promise<void> {
+    const row = this.index()?.proteins.find(p => p.id === id);
+    if (!row) return;
+    const wanted = ligand ?? (this.ligandFilter() === 'all' ? this.shown()?.ligand ?? null : this.ligandFilter() as LigandClass);
+    const token = ++this.loadToken;
+    this.proteinId.set(id);
+    this.loadingProtein.set(true);
+    this.failure.set(null);
+    try {
+      const loaded = await this.data.protein(id);
+      if (token !== this.loadToken) return;
+      this.selectedIndex.set(residue && residue <= row.length ? residue : null);
+      this.hoverIndex.set(null);
+      this.shown.set({ ...loaded, row, ligand: validLigand(row, wanted) });
+      this.syncUrl();
+    } catch {
+      if (token === this.loadToken) this.failure.set(`The data of ${id} could not be loaded.`);
+    } finally {
+      if (token === this.loadToken) this.loadingProtein.set(false);
+    }
   }
 
-  prev(): void {
-    this.goTo(this.currentIndex() - 1);
+  setLigand(ligand: LigandClass): void {
+    const s = this.shown();
+    if (s && ligand !== s.ligand) {
+      this.shown.set({ ...s, ligand });
+      this.syncUrl();
+    }
   }
 
-  next(): void {
-    this.goTo(this.currentIndex() + 1);
+  step(delta: number): void {
+    const next = this.listed()[this.position() + delta];
+    if (next) this.selectProtein(next.id);
   }
 
-  // ---- Residue sync (3D <-> sequence) ----
+  private syncUrl(): void {
+    const s = this.shown();
+    this.router.navigate([], {
+      relativeTo: this.route,
+      replaceUrl: true,
+      queryParams: {
+        dataset: this.dataset(), protein: s?.doc.id ?? null, ligand: s?.ligand ?? null,
+        res: this.selectedIndex(), color: this.colorMode() === 'outcome' ? null : this.colorMode(),
+      },
+    });
+  }
 
-  onResidueSelect(index: number): void {
+  // ---- Residue selection, shared by the three viewers, the track and the table ----
+
+  selectResidue(index: number): void {
     this.selectedIndex.set(this.selectedIndex() === index ? null : index);
+    this.syncUrl();
   }
 
-  onResidueHover(index: number | null): void {
-    // Reserved for future sequence-hover highlighting; the 3D tooltip already shows detail.
+  // ---- Viewers ----
+
+  setColorMode(mode: PredictionColorMode): void {
+    this.colorMode.set(mode);
+    this.syncUrl();
   }
 
-  // ---- Viewer actions ----
-
-  focusPocket(mode: FocusMode): void {
-    this.viewer?.focusPocket(mode);
+  toggleLinked(): void {
+    this.linked.update(v => !v);
+    this.cameraLink.enabled = this.linked();
   }
 
-  async exportPng(scale: number): Promise<void> {
-    const protein = this.currentProtein();
-    if (!protein) return;
-    await this.viewer?.exportPng(scale, `${protein.pdbId}_${this.filters().method}_${this.colorMode()}`);
+  focus(mode: FocusMode): void {
+    this.viewers.forEach(v => v.focusPocket(mode));
   }
 
-  setExportScale(event: Event): void {
-    const v = Number((event.target as HTMLSelectElement).value);
-    if ([1, 2, 4].includes(v)) this.exportScale.set(v);
+  resetView(): void {
+    this.viewers.forEach(v => v.resetView());
+  }
+
+  exportPng(model: number): void {
+    const s = this.shown();
+    if (s) {
+      this.viewers.get(model)?.exportPng(2, `${s.doc.id}_${s.ligand}_${MODEL_IDS[model]}_${this.colorMode()}`);
+    }
   }
 
   downloadPdb(): void {
-    const r = this.result();
-    const protein = this.currentProtein();
-    if (!r || !protein) return;
-    const url = URL.createObjectURL(new Blob([r.pdb], { type: 'text/plain' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${protein.pdbId}_${protein.id}.pdb`;
-    a.click();
+    const s = this.shown();
+    if (!s) return;
+    const url = URL.createObjectURL(new Blob([s.pdb], { type: 'chemical/x-pdb' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${s.doc.id}_esmfold.pdb`;
+    link.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
-  copyShareLink(): void {
-    const protein = this.currentProtein();
-    if (!protein) return;
-    const params = new URLSearchParams();
-    params.set('protein', protein.id);
-    params.set('method', this.filters().method);
-    params.set('color', this.colorMode());
-    const res = this.selectedIndex();
-    if (res) params.set('res', String(res));
-    const url = `${location.origin}${location.pathname}?${params.toString()}`;
-    navigator.clipboard?.writeText(url).then(
-      () => this.flashCopied(),
-      () => { /* clipboard unavailable */ }
-    );
-  }
-
-  private copied = signal(false);
-  private flashCopied(): void {
-    this.copied.set(true);
-    setTimeout(() => this.copied.set(false), 1500);
-  }
-  readonly justCopied = this.copied.asReadonly();
-
-  // ---- Display helpers ----
-
-  ligandClassLabel(type: LigandClass): string {
-    return this.bindingTypes.find(t => t.value === type)?.label ?? type;
+  copyLink(): void {
+    navigator.clipboard?.writeText(location.href).then(() => {
+      this.copied.set(true);
+      setTimeout(() => this.copied.set(false), 1500);
+    }, () => undefined);
   }
 }

@@ -28,9 +28,11 @@ def test_default_device_is_cuda_when_available(env):
     import torch
 
     want = "cuda" if torch.cuda.is_available() else "cpu"
-    assert set(Settings.from_env().all_devices().values()) == {want}
-    env.setenv("BINDSITE_DEVICE", "cpu")
-    assert set(Settings.from_env().all_devices().values()) == {"cpu"}
+    devices = Settings.from_env().all_devices()
+    assert devices.pop("esmfold") == "cuda" and set(devices.values()) == {want}
+    env.setenv("BINDSITE_DEVICE", "cpu")  # every model on the CPU; self-hosted ESMFold stays the GPU fallback
+    devices = Settings.from_env().all_devices()
+    assert devices.pop("esmfold") == "cuda" and set(devices.values()) == {"cpu"}
 
 
 def test_bad_device_is_rejected(env):
@@ -39,15 +41,17 @@ def test_bad_device_is_rejected(env):
         Settings.from_env().device_for("esm2")
 
 
-def test_length_limit_follows_the_structure_source(env, tmp_path):
+def test_length_limit_is_the_models_limit(env, tmp_path):
+    # Beyond the API's 400 aa a structure must be precomputed, folded on a free GPU or uploaded.
     s = Settings.from_env()
-    assert s.esmfold_local == "off" and s.max_length == API_MAX_LENGTH  # no esmfold_v1 -> API only
+    assert s.esmfold_local == "off" and s.max_length == LOCAL_MAX_LENGTH > API_MAX_LENGTH
+    assert s.esmfold_files_dir == tmp_path / "esmfold_files" and s.esmfold_min_free_gb == 10
     (tmp_path / "esmfold_v1").mkdir()
     (tmp_path / "esmfold_v1" / "pytorch_model.bin").write_bytes(b"x")
     s = Settings.from_env()
     assert s.esmfold_local == "auto" and s.max_length == LOCAL_MAX_LENGTH
     env.setenv("BINDSITE_ESMFOLD_LOCAL", "off")
-    assert Settings.from_env().max_length == API_MAX_LENGTH
+    assert Settings.from_env().esmfold_local == "off"
     env.setenv("BINDSITE_ESMFOLD_LOCAL", "maybe")
     with pytest.raises(ValueError, match="auto or off"):
         Settings.from_env()

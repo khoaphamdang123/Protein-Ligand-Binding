@@ -288,6 +288,18 @@ export class PredictionViewerComponent implements AfterViewInit, OnChanges, OnDe
     }
   }
 
+  /** Auto-rotate the camera around the vertical axis; pass 0 to stop. `speed` is in radians per second. */
+  setSpin(speed: number): void {
+    if (!this.plugin) return;
+    PluginCommands.Canvas3D.SetSettings(this.plugin, {
+      settings: (props: any) => {
+        props.trackball.animate = speed > 0
+          ? { name: 'spin', params: { speed } }
+          : { name: 'off', params: {} };
+      },
+    });
+  }
+
   /** Another viewer of the same structure moved (see CameraLink). */
   applyCamera(snapshot: Camera.Snapshot): void {
     const camera = this.plugin?.canvas3d?.camera;

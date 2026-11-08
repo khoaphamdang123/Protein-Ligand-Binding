@@ -81,6 +81,8 @@ export class ExplorerComponent implements OnInit {
   errorsOnly = signal(false);
   linked = signal(true);
   copied = signal(false);
+  spinning = signal(false);
+  spinSpeed = signal(0.5);   // radians per second
 
   datasetProteins = computed(() => (this.index()?.proteins ?? []).filter(p => p.split === this.dataset()));
 
@@ -312,6 +314,23 @@ export class ExplorerComponent implements OnInit {
   toggleLinked(): void {
     this.linked.update(v => !v);
     this.cameraLink.enabled = this.linked();
+  }
+
+  toggleSpin(): void {
+    this.spinning.update(v => !v);
+    this.applySpin();
+  }
+
+  setSpinSpeed(value: string): void {
+    const speed = Number(value);
+    if (Number.isFinite(speed) && speed > 0) this.spinSpeed.set(speed);
+    if (this.spinning()) this.applySpin();
+  }
+
+  /** Push the current auto-rotate state to all three viewers. */
+  private applySpin(): void {
+    const speed = this.spinning() ? this.spinSpeed() : 0;
+    this.viewers.forEach(v => v.setSpin(speed));
   }
 
   focus(mode: FocusMode): void {
